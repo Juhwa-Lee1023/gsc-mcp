@@ -1,0 +1,43 @@
+google:
+  defaultScope: readonly
+
+properties:
+  - alias: main
+    siteUrl: sc-domain:example.com
+    allowRead: true
+    allowWrite: false
+
+toolPolicy:
+  enabledTools:
+    - gsc.sites.list
+    - gsc.sites.get
+    - gsc.performance.query
+    - gsc.performance.search_appearance.list
+    - gsc.url.inspect
+    - gsc.sitemaps.list
+    - gsc.sitemaps.get
+  disabledTools:
+    - gsc.sites.add
+    - gsc.sites.delete
+    - gsc.sitemaps.submit
+    - gsc.sitemaps.delete
+
+queryPolicy:
+  defaultDataState: final
+  summaryMaxDays: 90
+  detailMaxDays: 31
+  detailSplitDailyAfterDays: 7
+  blockExactWithPageOrQueryWithoutBulkExport: true
+
+cache:
+  enabled: true
+  sitesTtlSeconds: 300
+  sitemapsTtlSeconds: 300
+  urlInspectionTtlSeconds: 3600
+  finalizedPerformanceTtlSeconds: 43200
+  freshPerformanceTtlSeconds: 300
+
+logging:
+  redactPageUrls: true
+  redactQueryStrings: true
+  auditLogPath: .gsc-mcp/audit/events.jsonl
