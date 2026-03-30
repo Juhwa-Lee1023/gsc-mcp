@@ -72,4 +72,27 @@ describe("performance planner", () => {
     expect(metadata.reasons).toContain("FRESH_DATA_STATE");
     expect(metadata.reasons).toContain("TOP_ROWS_LIMIT");
   });
+
+  it("uses the configured default dataState when omitted", () => {
+    const config = {
+      ...testConfig,
+      queryPolicy: {
+        ...testConfig.queryPolicy,
+        defaultDataState: "all" as const,
+      },
+    };
+    const property = resolveAllowedProperty(config, "main");
+    const plan = createPerformanceQueryPlan({
+      config,
+      property,
+      cursorSecret: "secret",
+      intent: {
+        site: "main",
+        startDate: "2026-01-01",
+        endDate: "2026-01-02",
+      },
+    });
+
+    expect(plan.normalizedIntent.dataState).toBe("all");
+  });
 });

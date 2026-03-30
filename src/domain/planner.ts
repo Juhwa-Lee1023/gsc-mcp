@@ -29,7 +29,7 @@ function normalizePageSize(pageSize?: number): number {
   return pageSize;
 }
 
-function normalizeIntent(intent: PerformanceQueryIntent, property: ResolvedProperty): PerformanceRequestEcho {
+function normalizeIntent(intent: PerformanceQueryIntent, property: ResolvedProperty, config: AppConfig): PerformanceRequestEcho {
   return {
     site: property.alias,
     canonicalSiteUrl: property.canonicalSiteUrl,
@@ -39,7 +39,7 @@ function normalizeIntent(intent: PerformanceQueryIntent, property: ResolvedPrope
     dimensions: intent.dimensions ?? [],
     filters: intent.filters ?? [],
     aggregationType: intent.aggregationType ?? "auto",
-    dataState: intent.dataState ?? "final",
+    dataState: intent.dataState ?? config.queryPolicy.defaultDataState,
     fidelity: intent.fidelity ?? "best_effort",
     sourcePreference: intent.sourcePreference ?? "auto",
     pageSize: normalizePageSize(intent.pageSize),
@@ -94,7 +94,7 @@ export function createPerformanceQueryPlan(args: {
     throw createDomainError("INVALID_ARGUMENT", "Use `type` instead of deprecated `searchType`.");
   }
 
-  const normalizedIntent = normalizeIntent(intent, property);
+  const normalizedIntent = normalizeIntent(intent, property, config);
   const dayCount = diffDaysInclusive(normalizedIntent.startDate, normalizedIntent.endDate);
   const detail = isDetailQuery(normalizedIntent);
 

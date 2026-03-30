@@ -42,4 +42,18 @@ describe("mcp server", () => {
     }
     expect(firstContent.text).toContain("\"transport\": \"stdio\"");
   });
+
+  it("does not register tools disabled by policy", async () => {
+    const context = createTestContext();
+    context.config.toolPolicy.disabledTools.push("gsc.performance.query");
+    const server = createMcpServer(context);
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    const tools = await client.listTools();
+    expect(tools.tools.some((tool) => tool.name === "gsc.performance.query")).toBe(false);
+  });
 });

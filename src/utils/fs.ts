@@ -1,4 +1,4 @@
-import { access, appendFile, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, appendFile, chmod, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 
@@ -31,11 +31,20 @@ export async function appendJsonLine(filePath: string, value: unknown, mode = 0o
   await appendFile(filePath, `${JSON.stringify(value)}\n`, { mode });
 }
 
-export async function copyIfMissing(sourcePath: string, destinationPath: string): Promise<boolean> {
+export async function copyIfMissing(
+  sourcePath: string,
+  destinationPath: string,
+  options: {
+    mode?: number;
+  } = {},
+): Promise<boolean> {
   if (await fileExists(destinationPath)) {
     return false;
   }
   await ensureDir(path.dirname(destinationPath));
   await copyFile(sourcePath, destinationPath);
+  if (options.mode !== undefined) {
+    await chmod(destinationPath, options.mode);
+  }
   return true;
 }

@@ -172,9 +172,10 @@ export class GscService {
           };
         }
 
-        const responses = await Promise.all(
-          plan.dateRanges.map((range) =>
-            this.client.querySearchAnalytics(property.canonicalSiteUrl, {
+        const responses: SearchAnalyticsApiResponse[] = [];
+        for (const range of plan.dateRanges) {
+          responses.push(
+            await this.client.querySearchAnalytics(property.canonicalSiteUrl, {
               startDate: range.startDate,
               endDate: range.endDate,
               type: plan.normalizedIntent.type,
@@ -185,8 +186,8 @@ export class GscService {
               rowLimit: MAX_PAGE_SIZE,
               startRow: 0,
             }),
-          ),
-        );
+          );
+        }
 
         const merged = mergeRows(
           responses.flatMap((response) =>

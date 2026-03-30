@@ -86,7 +86,12 @@ export function assertUrlWithinProperty(inspectionUrl: string, property: Resolve
     return candidate;
   }
 
-  if (!candidate.toString().startsWith(property.canonicalSiteUrl)) {
+  const propertyUrl = new URL(property.canonicalSiteUrl);
+  if (
+    candidate.protocol !== propertyUrl.protocol ||
+    candidate.host !== propertyUrl.host ||
+    !matchesPrefixPath(candidate.pathname, property.prefixPath)
+  ) {
     throw createDomainError("URL_OUTSIDE_PROPERTY", "Inspection URL is outside the selected URL-prefix property.", false, {
       inspectionUrl,
       site: property.canonicalSiteUrl,
@@ -94,4 +99,16 @@ export function assertUrlWithinProperty(inspectionUrl: string, property: Resolve
   }
 
   return candidate;
+}
+
+function matchesPrefixPath(candidatePath: string, prefixPath: string): boolean {
+  if (prefixPath === "/") {
+    return true;
+  }
+
+  const prefixWithoutTrailingSlash = prefixPath.endsWith("/")
+    ? prefixPath.slice(0, -1)
+    : prefixPath;
+
+  return candidatePath === prefixWithoutTrailingSlash || candidatePath.startsWith(prefixPath);
 }

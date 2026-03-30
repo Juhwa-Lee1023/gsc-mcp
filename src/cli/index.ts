@@ -1,5 +1,6 @@
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import dotenv from "dotenv";
 import { Command } from "commander";
@@ -13,6 +14,7 @@ import { GscService } from "../gsc/service.js";
 import { serveStdio } from "../mcp/server.js";
 import { copyIfMissing, fileExists } from "../utils/fs.js";
 import { jsonText } from "../utils/json.js";
+import { findPackageRoot } from "../utils/paths.js";
 import { resolveAllowedProperty } from "../utils/site-url.js";
 
 dotenv.config({ quiet: true });
@@ -23,7 +25,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
     context.config,
     new GoogleSearchConsoleClient(oauthClient),
     context.cache,
-    `${context.env.googleClientId}:${context.env.dataDir}`,
+    context.cursorSigningSecret,
     context.logger,
     (selector) => resolveAllowedProperty(context.config, selector),
   );
@@ -40,9 +42,12 @@ program
   .description("Create starter .env and gsc-mcp.config.yaml files if missing.")
   .action(async () => {
     const cwd = process.cwd();
-    const envCreated = await copyIfMissing(path.join(cwd, ".env.example"), path.join(cwd, ".env"));
+    const packageRoot = await findPackageRoot(path.dirname(fileURLToPath(import.meta.url)));
+    const envCreated = await copyIfMissing(path.join(packageRoot, ".env.example"), path.join(cwd, ".env"), {
+      mode: 0o600,
+    });
     const configCreated = await copyIfMissing(
-      path.join(cwd, "gsc-mcp.config.example.yaml"),
+      path.join(packageRoot, "gsc-mcp.config.example.yaml"),
       path.join(cwd, "gsc-mcp.config.yaml"),
     );
     process.stdout.write(`${jsonText({ envCreated, configCreated })}\n`);

@@ -1,6 +1,7 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { toDomainError } from "../../domain/errors.js";
+import { listEffectiveEnabledTools } from "../../domain/tool-policy.js";
 import type { RuntimeContext } from "../../domain/types.js";
 import { createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
@@ -14,7 +15,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
     context.config,
     new GoogleSearchConsoleClient(oauthClient),
     context.cache,
-    `${context.env.googleClientId}:${context.env.dataDir}`,
+    context.cursorSigningSecret,
     context.logger,
     (selector) => resolveAllowedProperty(context.config, selector),
   );
@@ -34,7 +35,7 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
         transport: "stdio",
         defaultScope: context.config.google.defaultScope,
         readOnlyByDefault: true,
-        tools: context.config.toolPolicy.enabledTools,
+        tools: listEffectiveEnabledTools(context.config.toolPolicy),
         resources: [
           "gsc://capabilities",
           "gsc://policies/current",

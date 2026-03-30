@@ -47,9 +47,8 @@ export async function loginWithLoopback(env: EnvConfig, tokenStore: TokenStore, 
     code_challenge: verifier.codeChallenge,
   });
 
-  await openSystemBrowser(authUrl);
-
   try {
+    await openSystemBrowser(authUrl);
     const code = await codePromise;
     const tokenResponse = await oauthClient.getToken({
       code,

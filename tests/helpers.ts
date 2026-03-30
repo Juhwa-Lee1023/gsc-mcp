@@ -137,6 +137,7 @@ export const noopAudit: AuditSink = {
 
 export function createTestContext(): RuntimeContext {
   const tokenStore = new MemoryTokenStore();
+  const config = structuredClone(testConfig);
   return {
     env: {
       googleClientId: "test-client-id",
@@ -146,11 +147,12 @@ export function createTestContext(): RuntimeContext {
       cacheDbPath: undefined,
       fileTokenSecret: "test-secret",
     },
-    config: testConfig,
-    properties: testConfig.properties.map(resolvePropertyConfig),
+    config,
+    properties: config.properties.map(resolvePropertyConfig),
     logger: noopLogger,
     audit: noopAudit,
     tokenStore,
     cache: new MemoryCacheStore(),
+    cursorSigningSecret: "test-cursor-secret",
   };
 }

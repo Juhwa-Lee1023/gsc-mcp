@@ -307,4 +307,5 @@ export interface RuntimeContext {
   audit: AuditSink;
   tokenStore: TokenStore;
   cache: CacheStore;
+  cursorSigningSecret: string;
 }

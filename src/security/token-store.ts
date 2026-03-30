@@ -4,6 +4,7 @@ import path from "node:path";
 import type { TokenRecord, TokenStore } from "../domain/types.js";
 import { fileExists, readJsonFile, writeJsonFileAtomic } from "../utils/fs.js";
 import { deleteMacosKeychain, loadMacosKeychain, saveMacosKeychain } from "./keychain.js";
+import { loadOrCreateSecret } from "./local-secret.js";
 
 interface EncryptedPayload {
   iv: string;
@@ -62,18 +63,10 @@ class EncryptedFileTokenStore implements TokenStore {
   }
 
   private async resolveSecret(): Promise<string> {
-    if (this.configuredSecret) {
-      return this.configuredSecret;
-    }
-    if (await fileExists(this.keyPath)) {
-      const fs = await import("node:fs/promises");
-      return (await fs.readFile(this.keyPath, "utf8")).trim();
-    }
-    const fs = await import("node:fs/promises");
-    const secret = randomBytes(32).toString("base64url");
-    await fs.mkdir(path.dirname(this.keyPath), { recursive: true });
-    await fs.writeFile(this.keyPath, `${secret}\n`, { mode: 0o600 });
-    return secret;
+    return loadOrCreateSecret({
+      secretPath: this.keyPath,
+      configuredSecret: this.configuredSecret,
+    });
   }
 }
 

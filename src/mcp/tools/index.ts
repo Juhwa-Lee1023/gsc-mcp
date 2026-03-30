@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { isToolEnabled } from "../../domain/tool-policy.js";
 import { createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
-import type { RuntimeContext } from "../../domain/types.js";
+import type { RuntimeContext, ToolName } from "../../domain/types.js";
 import { GscService } from "../../gsc/service.js";
 import { resolveAllowedProperty } from "../../utils/site-url.js";
 import { errorToolResult, okToolResult } from "../helpers.js";
@@ -37,14 +38,20 @@ async function createService(context: RuntimeContext): Promise<GscService> {
     context.config,
     new GoogleSearchConsoleClient(oauthClient),
     context.cache,
-    `${context.env.googleClientId}:${context.env.dataDir}`,
+    context.cursorSigningSecret,
     context.logger,
     (selector) => resolveAllowedProperty(context.config, selector),
   );
 }
 
 export function registerTools(server: McpServer, context: RuntimeContext): void {
-  server.registerTool(
+  const registerIfEnabled = (toolName: ToolName, callback: () => void): void => {
+    if (isToolEnabled(context.config.toolPolicy, toolName)) {
+      callback();
+    }
+  };
+
+  registerIfEnabled("gsc.sites.list", () => server.registerTool(
     "gsc.sites.list",
     {
       description: "List allowlisted Search Console properties visible to the current Google account.",
@@ -63,9 +70,9 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         return errorToolResult(error);
       }
     },
-  );
+  ));
 
-  server.registerTool(
+  registerIfEnabled("gsc.sites.get", () => server.registerTool(
     "gsc.sites.get",
     {
       description: "Get one allowlisted Search Console property by alias or raw allowlisted siteUrl.",
@@ -85,9 +92,9 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         return errorToolResult(error);
       }
     },
-  );
+  ));
 
-  server.registerTool(
+  registerIfEnabled("gsc.performance.query", () => server.registerTool(
     "gsc.performance.query",
     {
       description: "Query Search Console performance data with PT date resolution and explicit accuracy metadata.",
@@ -107,9 +114,9 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         return errorToolResult(error);
       }
     },
-  );
+  ));
 
-  server.registerTool(
+  registerIfEnabled("gsc.performance.search_appearance.list", () => server.registerTool(
     "gsc.performance.search_appearance.list",
     {
       description: "List available search appearance buckets using the official first-step Search Console flow.",
@@ -136,9 +143,9 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         return errorToolResult(error);
       }
     },
-  );
+  ));
 
-  server.registerTool(
+  registerIfEnabled("gsc.url.inspect", () => server.registerTool(
     "gsc.url.inspect",
     {
       description: "Inspect one URL using Google's indexed view, not a live fetch.",
@@ -161,9 +168,9 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         return errorToolResult(error);
       }
     },
-  );
+  ));
 
-  server.registerTool(
+  registerIfEnabled("gsc.sitemaps.list", () => server.registerTool(
     "gsc.sitemaps.list",
     {
       description: "List sitemaps for an allowlisted Search Console property.",
@@ -183,9 +190,9 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         return errorToolResult(error);
       }
     },
-  );
+  ));
 
-  server.registerTool(
+  registerIfEnabled("gsc.sitemaps.get", () => server.registerTool(
     "gsc.sitemaps.get",
     {
       description: "Get one sitemap entry for an allowlisted Search Console property.",
@@ -208,5 +215,5 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         return errorToolResult(error);
       }
     },
-  );
+  ));
 }

@@ -22,4 +22,9 @@ describe("site url normalization", () => {
     const property = resolveAllowedProperty(testConfig, "blog");
     expect(() => assertUrlWithinProperty("https://example.com/shop/", property)).toThrowError(/outside/i);
   });
+
+  it("allows the exact prefix root without a trailing slash", () => {
+    const property = resolveAllowedProperty(testConfig, "blog");
+    expect(assertUrlWithinProperty("https://example.com/blog", property).pathname).toBe("/blog");
+  });
 });
