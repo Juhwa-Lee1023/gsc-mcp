@@ -1,0 +1,98 @@
+import { describe, expect, it } from "vitest";
+
+import { buildMetadata, createNextCursor, createPerformanceQueryPlan } from "../../src/domain/planner.js";
+import { testConfig } from "../helpers.js";
+import { resolveAllowedProperty } from "../../src/utils/site-url.js";
+
+describe("performance planner", () => {
+  it("splits long detail queries by day", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    const plan = createPerformanceQueryPlan({
+      config: testConfig,
+      property,
+      cursorSecret: "secret",
+      intent: {
+        site: "main",
+        startDate: "2026-01-01",
+        endDate: "2026-01-10",
+        dimensions: ["query"],
+      },
+    });
+
+    expect(plan.splitApplied).toBe(true);
+    expect(plan.dateRanges).toHaveLength(10);
+    expect(plan.costClass).toBe("high");
+  });
+
+  it("rejects deprecated searchType", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    expect(() =>
+      createPerformanceQueryPlan({
+        config: testConfig,
+        property,
+        cursorSecret: "secret",
+        intent: {
+          site: "main",
+          startDate: "2026-01-01",
+          endDate: "2026-01-02",
+          searchType: "web",
+        },
+      }),
+    ).toThrowError(/deprecated/);
+  });
+
+  it("adds top-row and fresh reasons to metadata", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    const plan = createPerformanceQueryPlan({
+      config: testConfig,
+      property,
+      cursorSecret: "secret",
+      intent: {
+        site: "main",
+        startDate: "2026-01-01",
+        endDate: "2026-01-02",
+        dimensions: ["query"],
+        dataState: "all",
+      },
+    });
+    const nextCursor = createNextCursor({
+      cursorSecret: "secret",
+      requestHash: plan.requestHash,
+      startRow: 1000,
+      pageSize: 1000,
+    });
+    const metadata = buildMetadata({
+      plan,
+      responseAggregationType: "auto",
+      firstIncompleteDate: "2026-01-02",
+      nextCursor,
+    });
+    expect(metadata.accuracyClass).toBe("top_rows_and_fresh");
+    expect(metadata.reasons).toContain("PAGE_OR_QUERY_DIMENSION");
+    expect(metadata.reasons).toContain("FRESH_DATA_STATE");
+    expect(metadata.reasons).toContain("TOP_ROWS_LIMIT");
+  });
+
+  it("uses the configured default dataState when omitted", () => {
+    const config = {
+      ...testConfig,
+      queryPolicy: {
+        ...testConfig.queryPolicy,
+        defaultDataState: "all" as const,
+      },
+    };
+    const property = resolveAllowedProperty(config, "main");
+    const plan = createPerformanceQueryPlan({
+      config,
+      property,
+      cursorSecret: "secret",
+      intent: {
+        site: "main",
+        startDate: "2026-01-01",
+        endDate: "2026-01-02",
+      },
+    });
+
+    expect(plan.normalizedIntent.dataState).toBe("all");
+  });
+});
