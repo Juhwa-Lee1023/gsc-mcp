@@ -3,32 +3,89 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import dotenv from "dotenv";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 
 import { createRuntimeContext } from "../app.js";
 import { toDomainError } from "../domain/errors.js";
 import type { RuntimeContext } from "../domain/types.js";
-import { loginWithLoopback, createAuthorizedClient } from "../gsc/auth.js";
+import { createAccountCacheScope, createAuthorizedClient, createOAuthClient, loginWithLoopback } from "../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../gsc/client.js";
 import { GscService } from "../gsc/service.js";
 import { serveStdio } from "../mcp/server.js";
+import { loadConfig, loadEnv } from "../config/load.js";
+import { createTokenStore } from "../security/token-store.js";
 import { copyIfMissing, fileExists } from "../utils/fs.js";
 import { jsonText } from "../utils/json.js";
 import { findPackageRoot } from "../utils/paths.js";
-import { resolveAllowedProperty } from "../utils/site-url.js";
+import { resolvePropertyConfig, resolveAllowedProperty } from "../utils/site-url.js";
 
 dotenv.config({ quiet: true });
 
 async function createService(context: RuntimeContext): Promise<GscService> {
-  const { oauthClient } = await createAuthorizedClient(context.env, context.tokenStore);
+  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient),
     context.cache,
+    createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
     context.logger,
     (selector) => resolveAllowedProperty(context.config, selector),
   );
+}
+
+async function buildDoctorDiagnostics(cwd: string): Promise<Record<string, unknown>> {
+  const envFilePresent = await fileExists(path.join(cwd, ".env"));
+  const configFilePresent = await fileExists(path.join(cwd, "gsc-mcp.config.yaml"));
+
+  let envError: unknown = null;
+  let configError: unknown = null;
+  let tokenStoreKind: string | null = null;
+  let linked: boolean | null = null;
+  let dataDir: string | null = null;
+  let cacheDbPath: string | null = null;
+  let propertyCount: number | null = null;
+  let readOnlyDefault: boolean | null = null;
+
+  try {
+    const env = loadEnv(process.env, cwd);
+    dataDir = env.dataDir;
+    cacheDbPath = env.cacheDbPath ?? path.join(env.dataDir, "cache", "cache.sqlite");
+    const tokenStore = await createTokenStore({
+      dataDir: env.dataDir,
+      configuredSecret: env.fileTokenSecret,
+    });
+    tokenStoreKind = tokenStore.kind;
+    linked = Boolean(await tokenStore.get());
+    createOAuthClient(env, "http://127.0.0.1");
+  } catch (error) {
+    envError = toDomainError(error).toJSON();
+  }
+
+  try {
+    const config = await loadConfig(path.join(cwd, "gsc-mcp.config.yaml"));
+    propertyCount = config.properties.map(resolvePropertyConfig).length;
+    readOnlyDefault = config.google.defaultScope === "readonly";
+  } catch (error) {
+    configError = toDomainError(error).toJSON();
+  }
+
+  return {
+    nodeVersion: process.version,
+    cwd,
+    envFilePresent,
+    configFilePresent,
+    envValid: envError === null,
+    configValid: configError === null,
+    envError,
+    configError,
+    tokenStore: tokenStoreKind,
+    linked,
+    dataDir,
+    cacheDbPath,
+    propertyCount,
+    readOnlyDefault,
+  };
 }
 
 const program = new Command();
@@ -56,7 +113,7 @@ program
 const auth = program.command("auth").description("Manage Google OAuth credentials.");
 auth
   .command("login")
-  .option("--scope <scope>", "Scope to request", "readonly")
+  .addOption(new Option("--scope <scope>", "Scope to request").choices(["readonly", "write"]).default("readonly"))
   .action(async (options: { scope: "readonly" | "write" }) => {
     const context = await createRuntimeContext({ skipCache: true });
     const token = await loginWithLoopback(context.env, context.tokenStore, options.scope);
@@ -65,7 +122,7 @@ auth
 
 auth
   .command("upgrade")
-  .option("--scope <scope>", "Scope to request", "write")
+  .addOption(new Option("--scope <scope>", "Scope to request").choices(["readonly", "write"]).default("write"))
   .action(async (options: { scope: "readonly" | "write" }) => {
     const context = await createRuntimeContext({ skipCache: true });
     const token = await loginWithLoopback(context.env, context.tokenStore, options.scope);
@@ -114,22 +171,7 @@ program
   .description("Run local diagnostics.")
   .action(async () => {
     const cwd = process.cwd();
-    const context = await createRuntimeContext({ skipCache: true });
-    const token = await context.tokenStore.get();
-    process.stdout.write(
-      `${jsonText({
-        nodeVersion: process.version,
-        cwd,
-        envFilePresent: await fileExists(path.join(cwd, ".env")),
-        configFilePresent: await fileExists(path.join(cwd, "gsc-mcp.config.yaml")),
-        tokenStore: context.tokenStore.kind,
-        linked: Boolean(token),
-        dataDir: context.env.dataDir,
-        cacheDbPath: context.env.cacheDbPath ?? path.join(context.env.dataDir, "cache", "cache.sqlite"),
-        propertyCount: context.properties.length,
-        readOnlyDefault: context.config.google.defaultScope === "readonly",
-      })}\n`,
-    );
+    process.stdout.write(`${jsonText(await buildDoctorDiagnostics(cwd))}\n`);
   });
 
 const sites = program.command("sites").description("Site commands.");

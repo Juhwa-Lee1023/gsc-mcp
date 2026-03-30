@@ -9,7 +9,7 @@ export async function openSystemBrowser(url: string): Promise<void> {
     return;
   }
   if (process.platform === "win32") {
-    await execFileAsync("cmd", ["/c", "start", "", url]);
+    await execFileAsync("rundll32", ["url.dll,FileProtocolHandler", url]);
     return;
   }
   await execFileAsync("xdg-open", [url]);

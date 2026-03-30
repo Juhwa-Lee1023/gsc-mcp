@@ -1,10 +1,9 @@
 import { sha256 } from "../utils/crypto.js";
 
 const TOKEN_KEYS = new Set([
-  "access_token",
-  "refresh_token",
-  "client_secret",
-  "clientSecret",
+  "accesstoken",
+  "refreshtoken",
+  "clientsecret",
   "authorization",
 ]);
 
@@ -22,7 +21,7 @@ function redactValue(
   value: unknown,
   options?: { redactPageUrls?: boolean; redactQueryStrings?: boolean },
 ): unknown {
-  if (TOKEN_KEYS.has(key)) {
+  if (TOKEN_KEYS.has(normalizeKey(key))) {
     return "[REDACTED]";
   }
 
@@ -44,4 +43,8 @@ function redactValue(
   }
 
   return value;
+}
+
+function normalizeKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }

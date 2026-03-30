@@ -29,6 +29,24 @@ describe("cli doctor", () => {
     expect(parsed.readOnlyDefault).toBe(true);
     expect(parsed.propertyCount).toBe(1);
   });
+
+  it("still reports file presence when env and config are missing", async () => {
+    const cwd = path.join(os.tmpdir(), `gsc-mcp-cli-missing-${Date.now()}`);
+    await mkdir(cwd, { recursive: true });
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const cliEntry = path.join(repoRoot, "src/cli/index.ts");
+    const tsxBin = path.join(repoRoot, "node_modules/.bin/tsx");
+    const result = await execFileAsync(tsxBin, [cliEntry, "doctor"], {
+      cwd,
+      env: process.env,
+    });
+
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.envFilePresent).toBe(false);
+    expect(parsed.configFilePresent).toBe(false);
+    expect(parsed.envValid).toBe(false);
+    expect(parsed.configValid).toBe(false);
+  });
 });
 
 async function makeTempProject(): Promise<string> {

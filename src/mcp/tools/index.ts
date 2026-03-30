@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { isToolEnabled } from "../../domain/tool-policy.js";
-import { createAuthorizedClient } from "../../gsc/auth.js";
+import { createAccountCacheScope, createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
 import type { RuntimeContext, ToolName } from "../../domain/types.js";
 import { GscService } from "../../gsc/service.js";
@@ -33,11 +33,12 @@ const performanceInputSchema = {
 };
 
 async function createService(context: RuntimeContext): Promise<GscService> {
-  const { oauthClient } = await createAuthorizedClient(context.env, context.tokenStore);
+  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient),
     context.cache,
+    createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
     context.logger,
     (selector) => resolveAllowedProperty(context.config, selector),

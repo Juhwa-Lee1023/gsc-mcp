@@ -3,18 +3,19 @@ import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/serv
 import { toDomainError } from "../../domain/errors.js";
 import { listEffectiveEnabledTools } from "../../domain/tool-policy.js";
 import type { RuntimeContext } from "../../domain/types.js";
-import { createAuthorizedClient } from "../../gsc/auth.js";
+import { createAccountCacheScope, createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
 import { GscService } from "../../gsc/service.js";
 import { resolveAllowedProperty } from "../../utils/site-url.js";
 import { jsonResource } from "../helpers.js";
 
 async function createService(context: RuntimeContext): Promise<GscService> {
-  const { oauthClient } = await createAuthorizedClient(context.env, context.tokenStore);
+  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient),
     context.cache,
+    createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
     context.logger,
     (selector) => resolveAllowedProperty(context.config, selector),

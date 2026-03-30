@@ -82,6 +82,7 @@ describe("gsc service", () => {
       testConfig,
       new MockGscClient(),
       new MemoryCacheStore(),
+      "account-a",
       "secret",
       noopLogger,
       (selector) => resolveAllowedProperty(testConfig, selector),
@@ -106,11 +107,70 @@ describe("gsc service", () => {
       testConfig,
       new MockGscClient(),
       new MemoryCacheStore(),
+      "account-a",
       "secret",
       noopLogger,
       (selector) => resolveAllowedProperty(testConfig, selector),
     );
 
     await expect(service.inspectUrl("blog", "https://example.com/shop/page")).rejects.toThrow(/outside/i);
+  });
+
+  it("does not reuse cached performance data across account scopes", async () => {
+    let requestCount = 0;
+    class ScopedClient extends MockGscClient {
+      override async querySearchAnalytics(...args: Parameters<GscClient["querySearchAnalytics"]>) {
+        const response = await super.querySearchAnalytics(...args);
+        requestCount += 1;
+        return {
+          ...response,
+          rows: [
+            {
+              keys: ["alpha"],
+              clicks: requestCount,
+              impressions: 100,
+              ctr: 0.01 * requestCount,
+              position: 1,
+            },
+          ],
+        };
+      }
+    }
+
+    const cache = new MemoryCacheStore();
+    const client = new ScopedClient();
+    const serviceA = new GscService(
+      testConfig,
+      client,
+      cache,
+      "account-a",
+      "secret",
+      noopLogger,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+    const serviceB = new GscService(
+      testConfig,
+      client,
+      cache,
+      "account-b",
+      "secret",
+      noopLogger,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    const first = await serviceA.queryPerformance({
+      site: "main",
+      startDate: "2026-01-01",
+      endDate: "2026-01-02",
+    });
+    const second = await serviceB.queryPerformance({
+      site: "main",
+      startDate: "2026-01-01",
+      endDate: "2026-01-02",
+    });
+
+    expect(first.rows[0]?.clicks).toBe(1);
+    expect(second.rows[0]?.clicks).toBe(2);
+    expect(requestCount).toBe(2);
   });
 });

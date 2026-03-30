@@ -5,6 +5,7 @@ import { CodeChallengeMethod, OAuth2Client } from "google-auth-library";
 
 import { createDomainError } from "../domain/errors.js";
 import type { EnvConfig, ScopeMode, TokenRecord, TokenStore } from "../domain/types.js";
+import { stableHash } from "../utils/crypto.js";
 import { openSystemBrowser } from "../utils/browser.js";
 import { GOOGLE_SCOPES } from "./scopes.js";
 
@@ -71,6 +72,15 @@ export async function loginWithLoopback(env: EnvConfig, tokenStore: TokenStore, 
   } finally {
     server.close();
   }
+}
+
+export function createAccountCacheScope(tokenRecord: TokenRecord): string {
+  return stableHash({
+    scopeMode: tokenRecord.scopeMode,
+    refreshToken: tokenRecord.credentials.refresh_token ?? null,
+    idToken: tokenRecord.credentials.id_token ?? null,
+    createdAt: tokenRecord.createdAt,
+  });
 }
 
 async function startLoopbackServer(state: string): Promise<{

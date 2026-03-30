@@ -38,6 +38,7 @@ export class GscService {
     private readonly config: AppConfig,
     private readonly client: GscClient,
     private readonly cache: CacheStore,
+    private readonly cacheScope: string,
     private readonly cursorSecret: string,
     private readonly logger: Logger,
     private readonly resolveProperty: (selector: string) => ResolvedProperty,
@@ -256,12 +257,13 @@ export class GscService {
     if (!this.config.cache.enabled) {
       return callback();
     }
-    const cached = await this.cache.get<T>(namespace, key);
+    const scopedKey = `${this.cacheScope}:${key}`;
+    const cached = await this.cache.get<T>(namespace, scopedKey);
     if (cached) {
       return cached;
     }
     const computed = await callback();
-    await this.cache.set(namespace, key, computed, ttlSeconds);
+    await this.cache.set(namespace, scopedKey, computed, ttlSeconds);
     return computed;
   }
 }

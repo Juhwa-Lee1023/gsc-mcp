@@ -1,4 +1,4 @@
-import { access, appendFile, chmod, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, appendFile, chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 
@@ -23,6 +23,7 @@ export async function writeJsonFileAtomic(filePath: string, value: unknown, mode
   await ensureDir(path.dirname(filePath));
   const tempPath = `${filePath}.${process.pid}.tmp`;
   await writeFile(tempPath, JSON.stringify(value, null, 2), { mode });
+  await rm(filePath, { force: true });
   await rename(tempPath, filePath);
 }
 
