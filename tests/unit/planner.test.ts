@@ -41,6 +41,47 @@ describe("performance planner", () => {
     ).toThrowError(/deprecated/);
   });
 
+  it("rejects mixed searchAppearance dimensions", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    expect(() =>
+      createPerformanceQueryPlan({
+        config: testConfig,
+        property,
+        cursorSecret: "secret",
+        intent: {
+          site: "main",
+          startDate: "2026-01-01",
+          endDate: "2026-01-02",
+          dimensions: ["searchAppearance", "page"],
+        },
+      }),
+    ).toThrowError(/search_appearance\.list/);
+  });
+
+  it("rejects filtered first-step searchAppearance queries", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    expect(() =>
+      createPerformanceQueryPlan({
+        config: testConfig,
+        property,
+        cursorSecret: "secret",
+        intent: {
+          site: "main",
+          startDate: "2026-01-01",
+          endDate: "2026-01-02",
+          dimensions: ["searchAppearance"],
+          filters: [
+            {
+              dimension: "country",
+              operator: "equals",
+              expression: "usa",
+            },
+          ],
+        },
+      }),
+    ).toThrowError(/search_appearance\.list/);
+  });
+
   it("adds top-row and fresh reasons to metadata", () => {
     const property = resolveAllowedProperty(testConfig, "main");
     const plan = createPerformanceQueryPlan({

@@ -2,6 +2,8 @@ import type { DomainErrorShape } from "./types.js";
 
 export type DomainErrorCode =
   | "GOOGLE_ACCOUNT_NOT_LINKED"
+  | "GOOGLE_PERMISSION_DENIED"
+  | "GOOGLE_RESOURCE_NOT_FOUND"
   | "WRITE_SCOPE_REQUIRED"
   | "PROPERTY_NOT_ALLOWED"
   | "SITE_ALIAS_NOT_FOUND"

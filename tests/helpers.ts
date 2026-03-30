@@ -135,6 +135,14 @@ export const noopAudit: AuditSink = {
   write: async (_event: AuditEvent) => undefined,
 };
 
+export class MemoryAuditSink implements AuditSink {
+  readonly events: AuditEvent[] = [];
+
+  async write(event: AuditEvent): Promise<void> {
+    this.events.push(event);
+  }
+}
+
 export function createTestContext(): RuntimeContext {
   const tokenStore = new MemoryTokenStore();
   const config = structuredClone(testConfig);
