@@ -41,6 +41,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
     context.logger,
+    context.audit,
     (selector) => resolveAllowedProperty(context.config, selector),
   );
 }

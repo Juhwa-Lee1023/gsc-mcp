@@ -95,6 +95,18 @@ export function createPerformanceQueryPlan(args: {
   }
 
   const normalizedIntent = normalizeIntent(intent, property, config);
+  if (normalizedIntent.dimensions.includes("searchAppearance")) {
+    const isFirstStepAppearanceQuery =
+      normalizedIntent.dimensions.length === 1 &&
+      normalizedIntent.dimensions[0] === "searchAppearance" &&
+      normalizedIntent.filters.length === 0;
+    if (!isFirstStepAppearanceQuery) {
+      throw createDomainError(
+        "INVALID_ARGUMENT",
+        "Use `gsc.performance.search_appearance.list` for the first-step appearance query, then filter `gsc.performance.query` by `searchAppearance`.",
+      );
+    }
+  }
   const dayCount = diffDaysInclusive(normalizedIntent.startDate, normalizedIntent.endDate);
   const detail = isDetailQuery(normalizedIntent);
 

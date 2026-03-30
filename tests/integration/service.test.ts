@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { GscService } from "../../src/gsc/service.js";
 import type { GscClient, SearchAnalyticsApiResponse } from "../../src/domain/types.js";
-import { MemoryCacheStore, noopLogger, testConfig } from "../helpers.js";
+import { MemoryAuditSink, MemoryCacheStore, noopAudit, noopLogger, testConfig } from "../helpers.js";
 import { resolveAllowedProperty } from "../../src/utils/site-url.js";
 
 class MockGscClient implements GscClient {
@@ -78,6 +78,7 @@ class MockGscClient implements GscClient {
 
 describe("gsc service", () => {
   it("merges split detail queries and returns accuracy metadata", async () => {
+    const audit = new MemoryAuditSink();
     const service = new GscService(
       testConfig,
       new MockGscClient(),
@@ -85,6 +86,7 @@ describe("gsc service", () => {
       "account-a",
       "secret",
       noopLogger,
+      audit,
       (selector) => resolveAllowedProperty(testConfig, selector),
     );
 
@@ -100,9 +102,22 @@ describe("gsc service", () => {
     expect(result.rows[0]?.clicks).toBe(50);
     expect(result.metadata.splitApplied).toBe(true);
     expect(result.metadata.accuracyClass).toBe("top_rows_only");
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      action: "tool.invoke",
+      outcome: "success",
+      toolName: "gsc.performance.query",
+      siteAlias: "main",
+      details: expect.objectContaining({
+        requestClass: "detail",
+        accuracyClass: "top_rows_only",
+        splitApplied: true,
+      }),
+    });
   });
 
-  it("validates url inspection boundaries", async () => {
+  it("validates url inspection boundaries and records failure audits", async () => {
+    const audit = new MemoryAuditSink();
     const service = new GscService(
       testConfig,
       new MockGscClient(),
@@ -110,10 +125,22 @@ describe("gsc service", () => {
       "account-a",
       "secret",
       noopLogger,
+      audit,
       (selector) => resolveAllowedProperty(testConfig, selector),
     );
 
     await expect(service.inspectUrl("blog", "https://example.com/shop/page")).rejects.toThrow(/outside/i);
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      action: "tool.invoke",
+      outcome: "failure",
+      toolName: "gsc.url.inspect",
+      siteAlias: "blog",
+      details: expect.objectContaining({
+        errorCode: "URL_OUTSIDE_PROPERTY",
+        retryable: false,
+      }),
+    });
   });
 
   it("does not reuse cached performance data across account scopes", async () => {
@@ -146,6 +173,7 @@ describe("gsc service", () => {
       "account-a",
       "secret",
       noopLogger,
+      noopAudit,
       (selector) => resolveAllowedProperty(testConfig, selector),
     );
     const serviceB = new GscService(
@@ -155,6 +183,7 @@ describe("gsc service", () => {
       "account-b",
       "secret",
       noopLogger,
+      noopAudit,
       (selector) => resolveAllowedProperty(testConfig, selector),
     );
 
@@ -172,5 +201,83 @@ describe("gsc service", () => {
     expect(first.rows[0]?.clicks).toBe(1);
     expect(second.rows[0]?.clicks).toBe(2);
     expect(requestCount).toBe(2);
+  });
+
+  it("caches sitemap lookups for identical normalized feedpaths", async () => {
+    let sitemapRequests = 0;
+    class CountingClient extends MockGscClient {
+      override async getSitemap(...args: Parameters<GscClient["getSitemap"]>) {
+        sitemapRequests += 1;
+        return super.getSitemap(...args);
+      }
+    }
+
+    const service = new GscService(
+      testConfig,
+      new CountingClient(),
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    const first = await service.getSitemap("main", "https://example.com/sitemap.xml");
+    const second = await service.getSitemap("main", " https://example.com/sitemap.xml ");
+
+    expect(first).toEqual(second);
+    expect(sitemapRequests).toBe(1);
+  });
+
+  it("records only one audit event for search appearance helper queries", async () => {
+    const audit = new MemoryAuditSink();
+    const service = new GscService(
+      testConfig,
+      new MockGscClient(),
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      audit,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    await service.listSearchAppearance({
+      site: "main",
+      startDate: "2026-01-01",
+      endDate: "2026-01-02",
+    });
+
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      toolName: "gsc.performance.search_appearance.list",
+      outcome: "success",
+    });
+  });
+
+  it("does not fail successful calls when audit writing fails", async () => {
+    const service = new GscService(
+      testConfig,
+      new MockGscClient(),
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      {
+        write: async () => {
+          throw new Error("disk full");
+        },
+      },
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    const result = await service.queryPerformance({
+      site: "main",
+      startDate: "2026-01-01",
+      endDate: "2026-01-02",
+    });
+
+    expect(result.rows).toHaveLength(1);
   });
 });

@@ -14,6 +14,7 @@ import { GscService } from "../gsc/service.js";
 import { serveStdio } from "../mcp/server.js";
 import { loadConfig, loadEnv } from "../config/load.js";
 import { createTokenStore } from "../security/token-store.js";
+import { safeWriteAuditEvent } from "../security/audit-utils.js";
 import { copyIfMissing, fileExists } from "../utils/fs.js";
 import { jsonText } from "../utils/json.js";
 import { findPackageRoot } from "../utils/paths.js";
@@ -30,8 +31,58 @@ async function createService(context: RuntimeContext): Promise<GscService> {
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
     context.logger,
+    context.audit,
     (selector) => resolveAllowedProperty(context.config, selector),
   );
+}
+
+async function runAuthFlow(options: {
+  action: "auth.login" | "auth.upgrade";
+  requestedScope: "readonly" | "write";
+}): Promise<void> {
+  const context = await createRuntimeContext({ skipCache: true });
+  const startedAt = Date.now();
+
+  try {
+    const token = await loginWithLoopback(context.env, context.tokenStore, options.requestedScope);
+    const details = {
+      requestedScope: options.requestedScope,
+      scopeMode: token.scopeMode,
+      tokenStore: context.tokenStore.kind,
+      latencyMs: Date.now() - startedAt,
+    };
+    context.logger.info("Auth flow completed", {
+      action: options.action,
+      ...details,
+    });
+    await safeWriteAuditEvent(context.audit, context.logger, {
+      timestamp: new Date().toISOString(),
+      action: options.action,
+      outcome: "success",
+      details,
+    });
+    process.stdout.write(`${jsonText({ tokenStore: context.tokenStore.kind, scopeMode: token.scopeMode, updatedAt: token.updatedAt })}\n`);
+  } catch (error) {
+    const domainError = toDomainError(error);
+    const details = {
+      requestedScope: options.requestedScope,
+      tokenStore: context.tokenStore.kind,
+      latencyMs: Date.now() - startedAt,
+      errorCode: domainError.code,
+      retryable: domainError.retryable,
+    };
+    context.logger.warn("Auth flow failed", {
+      action: options.action,
+      ...details,
+    });
+    await safeWriteAuditEvent(context.audit, context.logger, {
+      timestamp: new Date().toISOString(),
+      action: options.action,
+      outcome: "failure",
+      details,
+    });
+    throw error;
+  }
 }
 
 async function buildDoctorDiagnostics(cwd: string): Promise<Record<string, unknown>> {
@@ -115,18 +166,20 @@ auth
   .command("login")
   .addOption(new Option("--scope <scope>", "Scope to request").choices(["readonly", "write"]).default("readonly"))
   .action(async (options: { scope: "readonly" | "write" }) => {
-    const context = await createRuntimeContext({ skipCache: true });
-    const token = await loginWithLoopback(context.env, context.tokenStore, options.scope);
-    process.stdout.write(`${jsonText({ tokenStore: context.tokenStore.kind, scopeMode: token.scopeMode, updatedAt: token.updatedAt })}\n`);
+    await runAuthFlow({
+      action: "auth.login",
+      requestedScope: options.scope,
+    });
   });
 
 auth
   .command("upgrade")
   .addOption(new Option("--scope <scope>", "Scope to request").choices(["readonly", "write"]).default("write"))
   .action(async (options: { scope: "readonly" | "write" }) => {
-    const context = await createRuntimeContext({ skipCache: true });
-    const token = await loginWithLoopback(context.env, context.tokenStore, options.scope);
-    process.stdout.write(`${jsonText({ tokenStore: context.tokenStore.kind, scopeMode: token.scopeMode, updatedAt: token.updatedAt })}\n`);
+    await runAuthFlow({
+      action: "auth.upgrade",
+      requestedScope: options.scope,
+    });
   });
 
 auth

@@ -107,9 +107,10 @@ export class GoogleSearchConsoleClient implements GscClient {
   }
 }
 
-function mapGoogleError(error: unknown) {
+export function mapGoogleError(error: unknown) {
   const gaxiosError = error as
     | {
+        code?: string;
         message?: string;
         response?: {
           status?: number;
@@ -132,18 +133,13 @@ function mapGoogleError(error: unknown) {
     | undefined;
   const reason = body?.error?.errors?.[0]?.reason;
   const message = body?.error?.message ?? gaxiosError.message ?? "Google Search Console request failed.";
+  const transportCode = gaxiosError.code;
 
-  if (status === 401) {
-    return createDomainError("GOOGLE_ACCOUNT_NOT_LINKED", message, false, {
-      status,
-      reason,
-      original: body,
-    });
-  }
   if (status === 429 || reason === "userRateLimitExceeded" || reason === "rateLimitExceeded") {
     return createDomainError("QUOTA_SHORT_TERM_EXCEEDED", message, true, {
       status,
       reason,
+      transportCode,
       original: body,
     });
   }
@@ -151,13 +147,49 @@ function mapGoogleError(error: unknown) {
     return createDomainError("QUOTA_LONG_TERM_EXCEEDED", message, true, {
       status,
       reason,
+      transportCode,
       original: body,
     });
   }
 
-  return createDomainError("INTERNAL_ERROR", message, status === 500 || status === 503, {
+  if (status === 401) {
+    return createDomainError("GOOGLE_ACCOUNT_NOT_LINKED", message, false, {
+      status,
+      reason,
+      transportCode,
+      original: body,
+    });
+  }
+  if (status === 400) {
+    return createDomainError("INVALID_ARGUMENT", message, false, {
+      status,
+      reason,
+      transportCode,
+      original: body,
+    });
+  }
+  if (status === 403 || reason === "insufficientPermissions" || reason === "forbidden" || reason === "permissionDenied") {
+    return createDomainError("GOOGLE_PERMISSION_DENIED", message, false, {
+      status,
+      reason,
+      transportCode,
+      original: body,
+    });
+  }
+  if (status === 404) {
+    return createDomainError("GOOGLE_RESOURCE_NOT_FOUND", message, false, {
+      status,
+      reason,
+      transportCode,
+      original: body,
+    });
+  }
+
+  const retryableTransportCodes = new Set(["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ENOTFOUND", "ECONNREFUSED"]);
+  return createDomainError("INTERNAL_ERROR", message, status === 500 || status === 503 || retryableTransportCodes.has(transportCode ?? ""), {
     status,
     reason,
+    transportCode,
     original: body,
   });
 }
