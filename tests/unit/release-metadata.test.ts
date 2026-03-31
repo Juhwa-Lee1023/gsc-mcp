@@ -12,7 +12,9 @@ describe("release metadata", () => {
 
     expect(packageJson.license).toBe("SEE LICENSE IN LICENSE");
     expect(packageJson.description).toContain("read-only");
+    expect(packageJson.description).toContain("CLI/MCP");
     expect(packageJson.description).toContain("inspector");
+    expect(packageJson.publishConfig).toEqual({ access: "public" });
     expect(packageJson.repository).toEqual({
       type: "git",
       url: "git+https://github.com/Juhwa-Lee1023/gsc-mcp.git",
@@ -23,23 +25,43 @@ describe("release metadata", () => {
     expect(packageJson.homepage).toBe("https://github.com/Juhwa-Lee1023/gsc-mcp#readme");
     expect(packageJson.files).toContain("LICENSE");
     expect(packageJson.files).not.toContain("gsc-mcp-dev-pack-2026-03-30");
+    expect(packageJson.scripts["pack:check"]).toBe("node scripts/check-package.mjs");
+    expect(packageJson.scripts["runtime:smoke"]).toBe("node scripts/runtime-smoke.mjs");
+    expect(packageJson.scripts["release:check"]).toBe("pnpm check && pnpm runtime:smoke && pnpm pack:check");
   });
 
   it("includes a license file and CI workflow", async () => {
     await expect(access(path.join(repoRoot, "LICENSE"))).resolves.toBeUndefined();
     await expect(access(path.join(repoRoot, ".github", "workflows", "ci.yml"))).resolves.toBeUndefined();
+    await expect(access(path.join(repoRoot, "RELEASING.md"))).resolves.toBeUndefined();
+    await expect(access(path.join(repoRoot, "pnpm-workspace.yaml"))).resolves.toBeUndefined();
+    await expect(access(path.join(repoRoot, "scripts", "runtime-smoke.mjs"))).resolves.toBeUndefined();
   });
 
   it("keeps release docs and CI aligned with the narrowed beta surface", async () => {
     const readme = await readFile(path.join(repoRoot, "README.md"), "utf8");
     const workflow = await readFile(path.join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
+    const releasing = await readFile(path.join(repoRoot, "RELEASING.md"), "utf8");
+    const workspace = await readFile(path.join(repoRoot, "pnpm-workspace.yaml"), "utf8");
 
     expect(readme).toContain("not a broad Search Console management suite");
+    expect(readme).toContain("not consumed as a supported importable library API");
     expect(readme).toContain("live API only");
+    expect(readme).toContain("pnpm-workspace.yaml");
+    expect(readme).toContain("pnpm runtime:smoke");
+    expect(readme).toContain("pnpm pack --pack-destination .tmp/pkg");
     expect(workflow).toContain("pnpm install --frozen-lockfile");
     expect(workflow).toContain("pnpm typecheck");
     expect(workflow).toContain("pnpm test");
     expect(workflow).toContain("pnpm build");
+    expect(workflow).toContain("node dist/index.js --help");
     expect(workflow).toContain("node dist/index.js auth status");
+    expect(workflow).toContain("pnpm runtime:smoke");
+    expect(workflow).toContain("pnpm pack:check");
+    expect(releasing).toContain("pnpm release:check");
+    expect(releasing).toContain("pnpm runtime:smoke");
+    expect(releasing).toContain("not a generic importable library");
+    expect(workspace).toContain("better-sqlite3");
+    expect(workspace).toContain("esbuild");
   });
 });

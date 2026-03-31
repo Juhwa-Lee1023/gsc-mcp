@@ -65,6 +65,24 @@ describe("cli auth", () => {
     expect(parsed.linked).toBe(false);
   });
 
+  it("prints help from the built CLI artifact", async () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+    await execFileAsync("pnpm", ["build"], {
+      cwd: repoRoot,
+      env: process.env,
+    });
+
+    const result = await execFileAsync("node", [path.join(repoRoot, "dist/index.js"), "--help"], {
+      cwd: repoRoot,
+      env: process.env,
+    });
+
+    expect(result.stdout).toContain("Search Console inspector");
+    expect(result.stdout).toContain("serve");
+    expect(result.stdout).toContain("auth");
+  });
+
   it("logs out with env only and no app config", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "gsc-mcp-auth-logout-"));
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");

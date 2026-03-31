@@ -41,7 +41,16 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Built CLI smoke test
+      - name: Built CLI help smoke test
+        run: node dist/index.js --help
+
+      - name: Built CLI auth smoke test
         run: |
           mkdir -p .tmp/ci-smoke
           GSC_MCP_DATA_DIR=.tmp/ci-smoke node dist/index.js auth status
+
+      - name: Built CLI runtime smoke test
+        run: pnpm runtime:smoke
+
+      - name: Package dry-run validation
+        run: pnpm pack:check
