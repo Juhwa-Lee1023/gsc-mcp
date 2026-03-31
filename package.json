@@ -1,8 +1,8 @@
 {
   "name": "gsc-mcp",
   "version": "0.1.0",
-  "description": "A narrow, reliable Google Search Console focused MCP server and CLI.",
-  "license": "UNLICENSED",
+  "description": "A narrow, read-only Google Search Console inspector MCP server and CLI.",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "repository": {
@@ -17,6 +17,8 @@
     "mcp",
     "google-search-console",
     "search-console",
+    "read-only",
+    "inspector",
     "cli",
     "typescript"
   ],

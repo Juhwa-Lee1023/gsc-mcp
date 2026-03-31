@@ -1,8 +1,8 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { toDomainError } from "../../domain/errors.js";
-import { listAvailablePromptNames, listAvailableResourceUris } from "../../domain/surface.js";
-import { assertToolEnabled, isToolEnabled, listEffectiveEnabledTools } from "../../domain/tool-policy.js";
+import { buildCapabilitySurface } from "../../domain/surface.js";
+import { assertToolEnabled, isToolEnabled } from "../../domain/tool-policy.js";
 import type { RuntimeContext } from "../../domain/types.js";
 import { createAccountCacheScope, createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
@@ -29,19 +29,19 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
     "gsc://capabilities",
     "gsc://capabilities",
     {
-      title: "gsc-mcp capabilities",
-      description: "Static capability matrix for the current gsc-mcp server.",
+      title: "gsc-mcp beta capabilities",
+      description: "Capability matrix for the current read-only gsc-mcp beta surface.",
       mimeType: "application/json",
     },
-    async (uri) =>
-      jsonResource(uri.toString(), {
+    async (uri) => {
+      const surface = buildCapabilitySurface(context.config.toolPolicy);
+      return jsonResource(uri.toString(), {
         transport: "stdio",
         defaultScope: context.config.google.defaultScope,
         readOnlyByDefault: true,
-        tools: listEffectiveEnabledTools(context.config.toolPolicy),
-        resources: listAvailableResourceUris(context.config.toolPolicy),
-        prompts: listAvailablePromptNames(context.config.toolPolicy),
-      }),
+        ...surface,
+      });
+    },
   );
 
   server.registerResource(
@@ -49,11 +49,12 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
     "gsc://policies/current",
     {
       title: "Current policies",
-      description: "Sanitized current property, tool, and query policies.",
+      description: "Sanitized current read-only property, tool, and query policies.",
       mimeType: "application/json",
     },
     async (uri) =>
       jsonResource(uri.toString(), {
+        surface: buildCapabilitySurface(context.config.toolPolicy),
         google: context.config.google,
         properties: context.properties.map((property) => ({
           alias: property.alias,

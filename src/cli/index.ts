@@ -216,7 +216,7 @@ async function buildDoctorDiagnostics(cwd: string): Promise<Record<string, unkno
 const program = new Command();
 program
   .name("gsc-mcp")
-  .description("A narrow, reliable Google Search Console MCP server and CLI.")
+  .description("A narrow, read-only Search Console inspector MCP server and CLI.")
   .version("0.1.0");
 
 program
@@ -235,7 +235,7 @@ program
     process.stdout.write(`${jsonText({ envCreated, configCreated })}\n`);
   });
 
-const auth = program.command("auth").description("Manage Google OAuth credentials.");
+const auth = program.command("auth").description("Manage local Google OAuth credentials for the beta.");
 auth
   .command("login")
   .addOption(new Option("--scope <scope>", "Scope to request").choices(["readonly", "write"]).default("readonly"))
