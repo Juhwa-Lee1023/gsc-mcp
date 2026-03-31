@@ -350,6 +350,52 @@ describe("gsc service", () => {
     expect(result.rows[0]?.clicks).toBe(25_002);
   });
 
+  it("fails clearly when a split shard exceeds the live API pagination safety budget", async () => {
+    let requestCount = 0;
+    class OverBudgetShardClient extends MockGscClient {
+      override async querySearchAnalytics(...args: Parameters<GscClient["querySearchAnalytics"]>) {
+        const [, request] = args;
+        requestCount += 1;
+        if (request.startDate !== "2026-01-01") {
+          return {
+            rows: [],
+            responseAggregationType: "byPage" as const,
+          };
+        }
+        return {
+          rows: Array.from({ length: 25_000 }, () => ({
+            keys: ["alpha"],
+            clicks: 1,
+            impressions: 10,
+            ctr: 0.1,
+            position: 2,
+          })),
+          responseAggregationType: "byPage" as const,
+        };
+      }
+    }
+
+    const service = new GscService(
+      testConfig,
+      new OverBudgetShardClient(),
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    await expect(service.queryPerformance({
+      site: "main",
+      startDate: "2026-01-01",
+      endDate: "2026-01-08",
+      dimensions: ["query"],
+      pageSize: 10,
+    })).rejects.toThrow(/pagination safety budget/i);
+    expect(requestCount).toBe(2);
+  });
+
   it("chunks long summary ranges and merges chunk results", async () => {
     let requestCount = 0;
     class SummaryChunkClient extends MockGscClient {

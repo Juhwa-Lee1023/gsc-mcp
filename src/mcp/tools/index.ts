@@ -22,7 +22,7 @@ import { resolveAllowedProperty } from "../../utils/site-url.js";
 import { errorToolResult, okToolResult } from "../helpers.js";
 
 async function createService(context: RuntimeContext): Promise<GscService> {
-  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
+  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore, context.logger);
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient, context.logger),

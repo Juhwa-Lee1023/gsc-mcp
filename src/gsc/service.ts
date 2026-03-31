@@ -82,7 +82,8 @@ function normalizeSitemapFeedpath(feedpath: string): string {
 }
 
 export class GscService {
-  private static readonly maxRangePageRequests = 200;
+  private static readonly maxRangePageRequests = 10;
+  private static readonly rangePageSlack = 1;
 
   constructor(
     private readonly config: AppConfig,
@@ -354,9 +355,10 @@ export class GscService {
 
   private async fetchSplitResponses(
     canonicalSiteUrl: string,
-    plan: Pick<import("../domain/types.js").PerformanceQueryPlan, "dateRanges" | "normalizedIntent">,
+    plan: Pick<import("../domain/types.js").PerformanceQueryPlan, "dateRanges" | "normalizedIntent" | "pageSize" | "startRow">,
   ): Promise<SearchAnalyticsApiResponse[]> {
     const responses: SearchAnalyticsApiResponse[] = [];
+    const maxPages = this.getRangePageBudget(plan.startRow, plan.pageSize);
     for (const range of plan.dateRanges) {
       responses.push(...await this.fetchRangePages(canonicalSiteUrl, {
         startDate: range.startDate,
@@ -366,17 +368,24 @@ export class GscService {
         filters: plan.normalizedIntent.filters,
         aggregationType: plan.normalizedIntent.aggregationType,
         dataState: plan.normalizedIntent.dataState,
-      }));
+      }, maxPages));
     }
     return responses;
+  }
+
+  private getRangePageBudget(startRow: number, pageSize: number): number {
+    const requestedWindow = startRow + pageSize;
+    const requestedPages = Math.max(1, Math.ceil(requestedWindow / MAX_PAGE_SIZE));
+    return Math.min(GscService.maxRangePageRequests, requestedPages + GscService.rangePageSlack);
   }
 
   private async fetchRangePages(
     canonicalSiteUrl: string,
     request: Omit<Parameters<GscClient["querySearchAnalytics"]>[1], "rowLimit" | "startRow">,
+    maxPages: number,
   ): Promise<SearchAnalyticsApiResponse[]> {
     const responses: SearchAnalyticsApiResponse[] = [];
-    for (let pageIndex = 0; pageIndex < GscService.maxRangePageRequests; pageIndex += 1) {
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
       const startRow = pageIndex * MAX_PAGE_SIZE;
       const response = await this.client.querySearchAnalytics(canonicalSiteUrl, {
         ...request,
@@ -388,7 +397,10 @@ export class GscService {
         return responses;
       }
     }
-    throw createDomainError("INTERNAL_ERROR", "Exceeded split-query pagination safety limit.");
+    throw createDomainError(
+      "HIGH_CARDINALITY_RANGE_UNSAFE",
+      `Split-query shard exceeded the live API pagination safety budget (${maxPages} page requests). Narrow the date range or request window.`,
+    );
   }
 
   private async withCache<T>(

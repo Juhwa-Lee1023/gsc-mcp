@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { CodeChallengeMethod, OAuth2Client } from "google-auth-library";
 
 import { createDomainError } from "../domain/errors.js";
-import type { EnvConfig, ScopeMode, TokenRecord, TokenStore } from "../domain/types.js";
+import type { EnvConfig, Logger, ScopeMode, TokenRecord, TokenStore } from "../domain/types.js";
 import { stableHash } from "../utils/crypto.js";
 import { openSystemBrowser } from "../utils/browser.js";
 import { GOOGLE_SCOPES } from "./scopes.js";
@@ -18,6 +18,22 @@ export function createOAuthClient(env: EnvConfig, redirectUri: string): OAuth2Cl
 }
 
 export async function createAuthorizedClient(env: EnvConfig, tokenStore: TokenStore): Promise<{
+  oauthClient: OAuth2Client;
+  tokenRecord: TokenRecord;
+}>;
+export async function createAuthorizedClient(
+  env: EnvConfig,
+  tokenStore: TokenStore,
+  logger: Pick<Logger, "warn">,
+): Promise<{
+  oauthClient: OAuth2Client;
+  tokenRecord: TokenRecord;
+}>;
+export async function createAuthorizedClient(
+  env: EnvConfig,
+  tokenStore: TokenStore,
+  logger?: Pick<Logger, "warn">,
+): Promise<{
   oauthClient: OAuth2Client;
   tokenRecord: TokenRecord;
 }> {
@@ -40,7 +56,12 @@ export async function createAuthorizedClient(env: EnvConfig, tokenStore: TokenSt
       },
       updatedAt: new Date().toISOString(),
     };
-    void tokenStore.set(tokenRecord);
+    void tokenStore.set(tokenRecord).catch((error) => {
+      logger?.warn("Failed to persist refreshed Google OAuth token", {
+        tokenStore: tokenStore.kind,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   });
   return {
     oauthClient,

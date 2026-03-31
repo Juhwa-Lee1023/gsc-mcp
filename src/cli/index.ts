@@ -31,7 +31,7 @@ import { resolvePropertyConfig, resolveAllowedProperty } from "../utils/site-url
 dotenv.config({ quiet: true });
 
 async function createService(context: RuntimeContext): Promise<GscService> {
-  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
+  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore, context.logger);
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient, context.logger),
