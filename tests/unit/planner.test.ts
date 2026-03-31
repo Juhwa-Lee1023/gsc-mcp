@@ -47,6 +47,22 @@ describe("performance planner", () => {
     });
   });
 
+  it("rejects summary ranges that exceed the chunk safety limit", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    expect(() =>
+      createPerformanceQueryPlan({
+        config: testConfig,
+        property,
+        cursorSecret: "secret",
+        intent: {
+          site: "main",
+          startDate: "2020-01-01",
+          endDate: "2025-01-01",
+        },
+      }),
+    ).toThrowError(/chunk safety limit/);
+  });
+
   it("rejects deprecated searchType", () => {
     const property = resolveAllowedProperty(testConfig, "main");
     expect(() =>

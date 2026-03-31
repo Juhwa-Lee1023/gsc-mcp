@@ -14,6 +14,17 @@ describe("shared input parsing", () => {
     ).toThrowError(/Invalid performance query input/);
   });
 
+  it("rejects empty cursors instead of silently treating them as first-page requests", () => {
+    expect(() =>
+      parsePerformanceQueryInput({
+        site: "main",
+        startDate: "2026-01-01",
+        endDate: "2026-01-02",
+        cursor: "",
+      }),
+    ).toThrowError(/Invalid performance query input/);
+  });
+
   it("defaults forceRefresh to false for URL inspection", () => {
     expect(
       parseUrlInspectionInput({

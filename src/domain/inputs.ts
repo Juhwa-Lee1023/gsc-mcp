@@ -38,7 +38,7 @@ export const performanceQueryInputShape = {
   fidelity: z.enum(FIDELITY_MODES).optional(),
   sourcePreference: z.enum(SOURCE_PREFERENCES).optional(),
   pageSize: z.number().int().min(1).max(25_000).optional(),
-  cursor: z.string().nullable().optional(),
+  cursor: z.string().min(1).nullable().optional(),
   searchType: z.unknown().optional(),
 } as const;
 

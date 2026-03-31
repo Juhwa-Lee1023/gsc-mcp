@@ -161,7 +161,7 @@ Important caveats:
 - `page` and `query` dimensions can return top-row-limited results
 - fresh data can be incomplete even when the query shape is valid
 - URL Inspection shows Google's indexed view, not a live fetch
-- long summary queries are chunked by `queryPolicy.summaryMaxDays`; long detail queries are either daily-split or rejected depending on range and query shape
+- long summary queries are chunked by `queryPolicy.summaryMaxDays` within a bounded safety limit; long detail queries are either daily-split or rejected depending on range and query shape
 - `sourcePreference` only supports `auto` and `live_api` in v1
 - `fidelity=prefer_exact` is rejected for page/query detail requests because live API top-row behavior cannot guarantee exactness
 - `dataState` defaults to `final`

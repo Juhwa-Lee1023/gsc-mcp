@@ -19,6 +19,7 @@ import { diffDaysInclusive, enumeratePtDates, normalizePtDate } from "../utils/t
 
 export const DEFAULT_PAGE_SIZE = 1000;
 export const MAX_PAGE_SIZE = 25_000;
+const MAX_SUMMARY_CHUNKS = 12;
 
 function normalizePageSize(pageSize?: number): number {
   if (pageSize === undefined) {
@@ -148,6 +149,16 @@ export function createPerformanceQueryPlan(args: {
       "HIGH_CARDINALITY_RANGE_UNSAFE",
       `Requested detail range exceeds safe live API limits (${config.queryPolicy.detailMaxDays} days).`,
     );
+  }
+
+  if (!detail && dayCount > config.queryPolicy.summaryMaxDays) {
+    const summaryChunkCount = Math.ceil(dayCount / config.queryPolicy.summaryMaxDays);
+    if (summaryChunkCount > MAX_SUMMARY_CHUNKS) {
+      throw createDomainError(
+        "HIGH_CARDINALITY_RANGE_UNSAFE",
+        `Requested summary range exceeds the live API chunk safety limit (${MAX_SUMMARY_CHUNKS} chunks). Narrow the date range.`,
+      );
+    }
   }
 
   const requestHash = stableHash({
