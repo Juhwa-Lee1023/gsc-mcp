@@ -20,8 +20,47 @@ describe("performance planner", () => {
     });
 
     expect(plan.splitApplied).toBe(true);
+    expect(plan.splitStrategy).toBe("detail_daily");
     expect(plan.dateRanges).toHaveLength(10);
     expect(plan.costClass).toBe("high");
+  });
+
+  it("chunks long summary queries instead of rejecting them", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    const plan = createPerformanceQueryPlan({
+      config: testConfig,
+      property,
+      cursorSecret: "secret",
+      intent: {
+        site: "main",
+        startDate: "2026-01-01",
+        endDate: "2026-05-01",
+      },
+    });
+
+    expect(plan.splitApplied).toBe(true);
+    expect(plan.splitStrategy).toBe("summary_chunked");
+    expect(plan.dateRanges).toHaveLength(2);
+    expect(plan.dateRanges[0]).toEqual({
+      startDate: "2026-01-01",
+      endDate: "2026-03-31",
+    });
+  });
+
+  it("rejects summary ranges that exceed the chunk safety limit", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    expect(() =>
+      createPerformanceQueryPlan({
+        config: testConfig,
+        property,
+        cursorSecret: "secret",
+        intent: {
+          site: "main",
+          startDate: "2020-01-01",
+          endDate: "2025-01-01",
+        },
+      }),
+    ).toThrowError(/chunk safety limit/);
   });
 
   it("rejects deprecated searchType", () => {
@@ -135,5 +174,23 @@ describe("performance planner", () => {
     });
 
     expect(plan.normalizedIntent.dataState).toBe("all");
+  });
+
+  it("fails clearly for prefer_exact detail queries on live API", () => {
+    const property = resolveAllowedProperty(testConfig, "main");
+    expect(() =>
+      createPerformanceQueryPlan({
+        config: testConfig,
+        property,
+        cursorSecret: "secret",
+        intent: {
+          site: "main",
+          startDate: "2026-01-01",
+          endDate: "2026-01-02",
+          dimensions: ["query"],
+          fidelity: "prefer_exact",
+        },
+      }),
+    ).toThrowError(/prefer_exact/);
   });
 });

@@ -22,6 +22,13 @@ import type {
   ToolName,
   UrlInspectionResult,
 } from "../domain/types.js";
+import {
+  parsePerformanceQueryInput,
+  parseSearchAppearanceQueryInput,
+  parseSiteSelectorInput,
+  parseSitemapGetInput,
+  parseUrlInspectionInput,
+} from "../domain/inputs.js";
 import { safeWriteAuditEvent } from "../security/audit-utils.js";
 import { stableHash } from "../utils/crypto.js";
 import { assertUrlWithinProperty } from "../utils/site-url.js";
@@ -47,6 +54,7 @@ function summarizePerformanceIntent(config: AppConfig, intent: PerformanceQueryI
     requestClass: isDetailIntent(intent) ? "detail" : "summary",
     requestedDataState: intent.dataState ?? config.queryPolicy.defaultDataState,
     requestedAggregationType: intent.aggregationType ?? "auto",
+    sourcePreference: intent.sourcePreference ?? "auto",
   };
 }
 
@@ -58,6 +66,7 @@ function summarizePerformanceResult(result: PerformanceQueryResult): Record<stri
     accuracyClass: result.metadata.accuracyClass,
     costClass: result.metadata.costClass,
     splitApplied: result.metadata.splitApplied,
+    splitStrategy: result.metadata.splitStrategy,
     dataState: result.metadata.dataState,
     responseAggregationType: result.metadata.responseAggregationType,
   };
@@ -73,6 +82,9 @@ function normalizeSitemapFeedpath(feedpath: string): string {
 }
 
 export class GscService {
+  private static readonly maxRangePageRequests = 10;
+  private static readonly rangePageSlack = 1;
+
   constructor(
     private readonly config: AppConfig,
     private readonly client: GscClient,
@@ -85,8 +97,8 @@ export class GscService {
   ) {}
 
   async listSites(): Promise<SiteRecord[]> {
-    return this.observe("gsc.sites.list", undefined, async () =>
-      this.withCache("sites", "list", this.config.cache.sitesTtlSeconds, async () => {
+    return this.observe("gsc.sites.list", undefined, async () => {
+      const { value } = await this.withCache("sites", "list", this.config.cache.sitesTtlSeconds, async () => {
         const response = await this.client.listSites();
         const allowlisted = new Map(
           this.config.properties.map((property) => [
@@ -106,11 +118,12 @@ export class GscService {
               canonicalSiteUrl: resolved.canonicalSiteUrl,
               permissionLevel: entry.permissionLevel,
               readEnabled: property.allowRead,
-              writeEnabled: property.allowWrite,
             } satisfies SiteRecord;
           })
           .filter((entry): entry is SiteRecord => entry !== null);
-      }),
+      });
+      return value;
+    },
       undefined,
       (sites) => ({ siteCount: sites.length }),
     );
@@ -118,7 +131,7 @@ export class GscService {
 
   async getSite(selector: string): Promise<SiteRecord> {
     return this.observe("gsc.sites.get", selector, async () => {
-      const property = this.assertReadable(selector);
+      const property = this.assertReadable(parseSiteSelectorInput({ site: selector }).site);
       const response = await this.client.getSite(property.canonicalSiteUrl);
       return {
         alias: property.alias,
@@ -126,7 +139,6 @@ export class GscService {
         canonicalSiteUrl: property.canonicalSiteUrl,
         permissionLevel: response.permissionLevel,
         readEnabled: property.allowRead,
-        writeEnabled: property.allowWrite,
       };
     }, undefined, (site) => ({
       siteAlias: site.alias,
@@ -136,11 +148,12 @@ export class GscService {
 
   async listSitemaps(selector: string): Promise<{ property: string; sitemaps: SitemapRecord[] }> {
     return this.observe("gsc.sitemaps.list", selector, async () => {
-      const property = this.assertReadable(selector);
-      return this.withCache("sitemaps", property.canonicalSiteUrl, this.config.cache.sitemapsTtlSeconds, async () => ({
+      const property = this.assertReadable(parseSiteSelectorInput({ site: selector }).site);
+      const { value } = await this.withCache("sitemaps", property.canonicalSiteUrl, this.config.cache.sitemapsTtlSeconds, async () => ({
         property: property.alias,
         sitemaps: await this.client.listSitemaps(property.canonicalSiteUrl),
       }));
+      return value;
     }, undefined, (result) => ({
       siteAlias: result.property,
       sitemapCount: result.sitemaps.length,
@@ -148,10 +161,11 @@ export class GscService {
   }
 
   async getSitemap(selector: string, feedpath: string): Promise<{ property: string; sitemap: SitemapRecord }> {
-    const normalizedFeedpath = normalizeSitemapFeedpath(feedpath);
+    const input = parseSitemapGetInput({ site: selector, feedpath });
+    const normalizedFeedpath = normalizeSitemapFeedpath(input.feedpath);
     return this.observe("gsc.sitemaps.get", selector, async () => {
-      const property = this.assertReadable(selector);
-      return this.withCache(
+      const property = this.assertReadable(input.site);
+      const { value } = await this.withCache(
         "sitemap",
         `${property.canonicalSiteUrl}:${normalizedFeedpath}`,
         this.config.cache.sitemapsTtlSeconds,
@@ -160,16 +174,18 @@ export class GscService {
           sitemap: await this.client.getSitemap(property.canonicalSiteUrl, normalizedFeedpath),
         }),
       );
+      return value;
     }, undefined, (result) => ({
       siteAlias: result.property,
     }));
   }
 
-  async inspectUrl(selector: string, inspectionUrl: string): Promise<UrlInspectionResult> {
-    return this.observe("gsc.url.inspect", selector, async () => {
-      const property = this.assertReadable(selector);
-      const normalizedUrl = assertUrlWithinProperty(inspectionUrl, property).toString();
-      return this.withCache(
+  async inspectUrl(input: { site: string; url: string; forceRefresh?: boolean }): Promise<UrlInspectionResult> {
+    const parsedInput = parseUrlInspectionInput(input);
+    return this.observe("gsc.url.inspect", parsedInput.site, async () => {
+      const property = this.assertReadable(parsedInput.site);
+      const normalizedUrl = assertUrlWithinProperty(parsedInput.url, property).toString();
+      const { value, cacheHit } = await this.withCache(
         "inspection",
         `${property.canonicalSiteUrl}:${normalizedUrl}`,
         this.config.cache.urlInspectionTtlSeconds,
@@ -177,22 +193,34 @@ export class GscService {
           property: property.alias,
           canonicalSiteUrl: property.canonicalSiteUrl,
           inspectionUrl: normalizedUrl,
-          inspectionType: "indexed_view",
+          inspectionType: "indexed_view" as const,
+          metadata: {
+            cacheHit: false,
+          },
           raw: await this.client.inspectUrl(property.canonicalSiteUrl, normalizedUrl),
         }),
+        parsedInput.forceRefresh,
       );
+      return {
+        ...value,
+        metadata: {
+          cacheHit,
+        },
+      };
     }, undefined, (result) => ({
       siteAlias: result.property,
       inspectionType: result.inspectionType,
+      cacheHit: result.metadata.cacheHit,
     }));
   }
 
   async queryPerformance(intent: PerformanceQueryIntent): Promise<PerformanceQueryResult> {
+    const validatedIntent = parsePerformanceQueryInput(intent);
     return this.observe(
       "gsc.performance.query",
-      intent.site,
-      async () => this.queryPerformanceInternal(intent),
-      summarizePerformanceIntent(this.config, intent),
+      validatedIntent.site,
+      async () => this.queryPerformanceInternal(validatedIntent),
+      summarizePerformanceIntent(this.config, validatedIntent),
       summarizePerformanceResult,
     );
   }
@@ -200,22 +228,17 @@ export class GscService {
   async listSearchAppearance(
     input: Omit<PerformanceQueryIntent, "dimensions" | "filters" | "cursor">,
   ): Promise<PerformanceQueryResult> {
+    const validatedInput = parseSearchAppearanceQueryInput(input);
     const intent: PerformanceQueryIntent = {
-      ...input,
+      ...validatedInput,
       dimensions: ["searchAppearance"],
       filters: [],
       cursor: null,
     };
     return this.observe(
       "gsc.performance.search_appearance.list",
-      input.site,
-      async () =>
-        this.queryPerformanceInternal({
-          ...input,
-          dimensions: ["searchAppearance"],
-          filters: [],
-          cursor: null,
-        }),
+      validatedInput.site,
+      async () => this.queryPerformanceInternal(intent),
       summarizePerformanceIntent(this.config, intent),
       summarizePerformanceResult,
     );
@@ -234,12 +257,12 @@ export class GscService {
         ? this.config.cache.finalizedPerformanceTtlSeconds
         : this.config.cache.freshPerformanceTtlSeconds;
 
-    return this.withCache(
+    const { value } = await this.withCache(
       "performance",
       stableHash({ property: property.canonicalSiteUrl, plan }),
       ttl,
       async () => {
-        if (!plan.splitApplied) {
+        if (plan.splitStrategy === "none") {
           const response = await this.client.querySearchAnalytics(property.canonicalSiteUrl, {
             startDate: plan.resolvedStartDatePT,
             endDate: plan.resolvedEndDatePT,
@@ -276,23 +299,7 @@ export class GscService {
           };
         }
 
-        const responses: SearchAnalyticsApiResponse[] = [];
-        for (const range of plan.dateRanges) {
-          responses.push(
-            await this.client.querySearchAnalytics(property.canonicalSiteUrl, {
-              startDate: range.startDate,
-              endDate: range.endDate,
-              type: plan.normalizedIntent.type,
-              dimensions: plan.normalizedIntent.dimensions,
-              filters: plan.normalizedIntent.filters,
-              aggregationType: plan.normalizedIntent.aggregationType,
-              dataState: plan.normalizedIntent.dataState,
-              rowLimit: MAX_PAGE_SIZE,
-              startRow: 0,
-            }),
-          );
-        }
-
+        const responses = await this.fetchSplitResponses(property.canonicalSiteUrl, plan);
         const merged = mergeRows(
           responses.flatMap((response) =>
             toRows(response).map((row) => ({
@@ -335,6 +342,7 @@ export class GscService {
         };
       },
     );
+    return value;
   }
 
   private assertReadable(selector: string): ResolvedProperty {
@@ -345,23 +353,92 @@ export class GscService {
     return property;
   }
 
-  private async withCache<T>(namespace: string, key: string, ttlSeconds: number, callback: () => Promise<T>): Promise<T> {
+  private async fetchSplitResponses(
+    canonicalSiteUrl: string,
+    plan: Pick<import("../domain/types.js").PerformanceQueryPlan, "dateRanges" | "normalizedIntent" | "pageSize" | "startRow">,
+  ): Promise<SearchAnalyticsApiResponse[]> {
+    const responses: SearchAnalyticsApiResponse[] = [];
+    const maxPages = this.getRangePageBudget(plan.startRow, plan.pageSize);
+    for (const range of plan.dateRanges) {
+      responses.push(...await this.fetchRangePages(canonicalSiteUrl, {
+        startDate: range.startDate,
+        endDate: range.endDate,
+        type: plan.normalizedIntent.type,
+        dimensions: plan.normalizedIntent.dimensions,
+        filters: plan.normalizedIntent.filters,
+        aggregationType: plan.normalizedIntent.aggregationType,
+        dataState: plan.normalizedIntent.dataState,
+      }, maxPages));
+    }
+    return responses;
+  }
+
+  private getRangePageBudget(startRow: number, pageSize: number): number {
+    const requestedWindow = startRow + pageSize;
+    const requestedPages = Math.max(1, Math.ceil(requestedWindow / MAX_PAGE_SIZE));
+    return Math.min(GscService.maxRangePageRequests, requestedPages + GscService.rangePageSlack);
+  }
+
+  private async fetchRangePages(
+    canonicalSiteUrl: string,
+    request: Omit<Parameters<GscClient["querySearchAnalytics"]>[1], "rowLimit" | "startRow">,
+    maxPages: number,
+  ): Promise<SearchAnalyticsApiResponse[]> {
+    const responses: SearchAnalyticsApiResponse[] = [];
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      const startRow = pageIndex * MAX_PAGE_SIZE;
+      const response = await this.client.querySearchAnalytics(canonicalSiteUrl, {
+        ...request,
+        rowLimit: MAX_PAGE_SIZE,
+        startRow,
+      });
+      responses.push(response);
+      if ((response.rows?.length ?? 0) < MAX_PAGE_SIZE) {
+        return responses;
+      }
+    }
+    throw createDomainError(
+      "HIGH_CARDINALITY_RANGE_UNSAFE",
+      `Split-query shard exceeded the live API pagination safety budget (${maxPages} page requests). Narrow the date range or request window.`,
+    );
+  }
+
+  private async withCache<T>(
+    namespace: string,
+    key: string,
+    ttlSeconds: number,
+    callback: () => Promise<T>,
+    forceRefresh = false,
+  ): Promise<{ value: T; cacheHit: boolean }> {
     const keyHash = stableHash({ namespace, scope: this.cacheScope, key });
     if (!this.config.cache.enabled) {
       this.logger.debug("Cache bypassed", { namespace, keyHash, reason: "disabled" });
-      return callback();
+      return {
+        value: await callback(),
+        cacheHit: false,
+      };
     }
     const scopedKey = `${this.cacheScope}:${key}`;
-    const cached = await this.cache.get<T>(namespace, scopedKey);
-    if (cached) {
-      this.logger.debug("Cache hit", { namespace, keyHash });
-      return cached;
+    if (!forceRefresh) {
+      const cached = await this.cache.get<T>(namespace, scopedKey);
+      if (cached) {
+        this.logger.debug("Cache hit", { namespace, keyHash });
+        return {
+          value: cached,
+          cacheHit: true,
+        };
+      }
+    } else {
+      this.logger.debug("Cache bypassed", { namespace, keyHash, reason: "force_refresh" });
     }
     this.logger.debug("Cache miss", { namespace, keyHash });
     const computed = await callback();
     await this.cache.set(namespace, scopedKey, computed, ttlSeconds);
     this.logger.debug("Cache stored", { namespace, keyHash, ttlSeconds });
-    return computed;
+    return {
+      value: computed,
+      cacheHit: false,
+    };
   }
 
   private async observe<T>(

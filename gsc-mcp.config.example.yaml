@@ -5,7 +5,6 @@ properties:
   - alias: main
     siteUrl: sc-domain:example.com
     allowRead: true
-    allowWrite: false
 
 toolPolicy:
   enabledTools:
@@ -16,18 +15,13 @@ toolPolicy:
     - gsc.url.inspect
     - gsc.sitemaps.list
     - gsc.sitemaps.get
-  disabledTools:
-    - gsc.sites.add
-    - gsc.sites.delete
-    - gsc.sitemaps.submit
-    - gsc.sitemaps.delete
+  disabledTools: []
 
 queryPolicy:
   defaultDataState: final
   summaryMaxDays: 90
   detailMaxDays: 31
   detailSplitDailyAfterDays: 7
-  blockExactWithPageOrQueryWithoutBulkExport: true
 
 cache:
   enabled: true

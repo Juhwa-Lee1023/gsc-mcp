@@ -5,22 +5,30 @@ import type {
   GscClient,
   GscSiteEntry,
   GscSitesListResponse,
+  Logger,
   SearchAnalyticsApiResponse,
   SitemapRecord,
 } from "../domain/types.js";
 
 const WEBMASTERS_BASE_URL = "https://www.googleapis.com/webmasters/v3";
 const SEARCH_CONSOLE_BASE_URL = "https://searchconsole.googleapis.com/v1";
+const REQUEST_TIMEOUT_MS = 20_000;
+const MAX_RETRIES = 3;
+const BASE_BACKOFF_MS = 500;
 
 export class GoogleSearchConsoleClient implements GscClient {
-  constructor(private readonly oauthClient: OAuth2Client) {}
+  constructor(
+    private readonly oauthClient: OAuth2Client,
+    private readonly logger?: Logger,
+  ) {}
 
   async listSites(): Promise<GscSitesListResponse> {
-    return this.request<GscSitesListResponse>({ url: `${WEBMASTERS_BASE_URL}/sites`, method: "GET" });
+    return this.request<GscSitesListResponse>({ label: "sites.list", url: `${WEBMASTERS_BASE_URL}/sites`, method: "GET" });
   }
 
   async getSite(siteUrl: string): Promise<GscSiteEntry> {
     return this.request<GscSiteEntry>({
+      label: "sites.get",
       url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}`,
       method: "GET",
     });
@@ -41,6 +49,7 @@ export class GoogleSearchConsoleClient implements GscClient {
     },
   ): Promise<SearchAnalyticsApiResponse> {
     return this.request<SearchAnalyticsApiResponse>({
+      label: "performance.query",
       url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
       method: "POST",
       data: {
@@ -68,6 +77,7 @@ export class GoogleSearchConsoleClient implements GscClient {
 
   async inspectUrl(siteUrl: string, inspectionUrl: string): Promise<Record<string, unknown>> {
     const response = await this.request<{ inspectionResult: Record<string, unknown> }>({
+      label: "url.inspect",
       url: `${SEARCH_CONSOLE_BASE_URL}/urlInspection/index:inspect`,
       method: "POST",
       data: {
@@ -80,6 +90,7 @@ export class GoogleSearchConsoleClient implements GscClient {
 
   async listSitemaps(siteUrl: string): Promise<SitemapRecord[]> {
     const response = await this.request<{ sitemap?: SitemapRecord[] }>({
+      label: "sitemaps.list",
       url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}/sitemaps`,
       method: "GET",
     });
@@ -88,23 +99,80 @@ export class GoogleSearchConsoleClient implements GscClient {
 
   async getSitemap(siteUrl: string, feedpath: string): Promise<SitemapRecord> {
     return this.request<SitemapRecord>({
+      label: "sitemaps.get",
       url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}/sitemaps/${encodeURIComponent(feedpath)}`,
       method: "GET",
     });
   }
 
-  private async request<T>(options: { url: string; method: "GET" | "POST"; data?: unknown }): Promise<T> {
-    try {
-      const response = await this.oauthClient.request<T>({
-        url: options.url,
-        method: options.method,
-        data: options.data,
-      });
-      return response.data;
-    } catch (error) {
-      throw mapGoogleError(error);
+  private async request<T>(options: { label: string; url: string; method: "GET" | "POST"; data?: unknown }): Promise<T> {
+    for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
+      try {
+        const response = await this.oauthClient.request<T>({
+          url: options.url,
+          method: options.method,
+          data: options.data,
+          timeout: REQUEST_TIMEOUT_MS,
+        });
+        return response.data;
+      } catch (error) {
+        const domainError = mapGoogleError(error);
+        if (!domainError.retryable || attempt > MAX_RETRIES) {
+          throw domainError;
+        }
+
+        const retryAfterMs = parseRetryAfterMs(error);
+        const delayMs = retryAfterMs ?? computeBackoffMs(attempt);
+        this.logger?.warn("Retrying Google API request", {
+          operation: options.label,
+          attempt,
+          delayMs,
+          errorCode: domainError.code,
+          retryAfterMs,
+        });
+        await wait(delayMs);
+      }
     }
+    throw createDomainError("INTERNAL_ERROR", "Google Search Console request exhausted retry attempts.", true);
   }
+}
+
+function computeBackoffMs(attempt: number): number {
+  const jitter = Math.floor(Math.random() * 250);
+  return BASE_BACKOFF_MS * 2 ** (attempt - 1) + jitter;
+}
+
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+function parseRetryAfterMs(error: unknown): number | null {
+  const retryAfter = (
+    error as {
+      response?: {
+        headers?: Record<string, string | string[] | undefined>;
+      };
+    }
+  )?.response?.headers?.["retry-after"];
+  if (!retryAfter) {
+    return null;
+  }
+
+  const rawValue = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
+  if (!rawValue) {
+    return null;
+  }
+  const numericSeconds = Number(rawValue);
+  if (Number.isFinite(numericSeconds)) {
+    return Math.max(0, numericSeconds * 1000);
+  }
+  const dateMs = Date.parse(rawValue);
+  if (Number.isFinite(dateMs)) {
+    return Math.max(0, dateMs - Date.now());
+  }
+  return null;
 }
 
 export function mapGoogleError(error: unknown) {
@@ -186,10 +254,15 @@ export function mapGoogleError(error: unknown) {
   }
 
   const retryableTransportCodes = new Set(["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ENOTFOUND", "ECONNREFUSED"]);
-  return createDomainError("INTERNAL_ERROR", message, status === 500 || status === 503 || retryableTransportCodes.has(transportCode ?? ""), {
-    status,
-    reason,
-    transportCode,
-    original: body,
-  });
+  return createDomainError(
+    "INTERNAL_ERROR",
+    message,
+    status === 500 || status === 502 || status === 503 || status === 504 || retryableTransportCodes.has(transportCode ?? ""),
+    {
+      status,
+      reason,
+      transportCode,
+      original: body,
+    },
+  );
 }

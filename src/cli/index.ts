@@ -5,9 +5,17 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { Command, Option } from "commander";
 
-import { createRuntimeContext } from "../app.js";
-import { toDomainError } from "../domain/errors.js";
+import { createAuthContext, createConfigContext, createRuntimeContext } from "../app.js";
+import {
+  parsePerformanceQueryInput,
+  parseSearchAppearanceQueryInput,
+  parseSitemapGetInput,
+  parseSiteSelectorInput,
+  parseUrlInspectionInput,
+} from "../domain/inputs.js";
+import { createDomainError, toDomainError } from "../domain/errors.js";
 import type { RuntimeContext } from "../domain/types.js";
+import { assertToolEnabled } from "../domain/tool-policy.js";
 import { createAccountCacheScope, createAuthorizedClient, createOAuthClient, loginWithLoopback } from "../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../gsc/client.js";
 import { GscService } from "../gsc/service.js";
@@ -23,10 +31,10 @@ import { resolvePropertyConfig, resolveAllowedProperty } from "../utils/site-url
 dotenv.config({ quiet: true });
 
 async function createService(context: RuntimeContext): Promise<GscService> {
-  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
+  const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore, context.logger);
   return new GscService(
     context.config,
-    new GoogleSearchConsoleClient(oauthClient),
+    new GoogleSearchConsoleClient(oauthClient, context.logger),
     context.cache,
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
@@ -36,11 +44,32 @@ async function createService(context: RuntimeContext): Promise<GscService> {
   );
 }
 
+async function createServiceForTool(context: RuntimeContext, toolName: import("../domain/types.js").ToolName): Promise<GscService> {
+  assertToolEnabled(context.config.toolPolicy, toolName);
+  return createService(context);
+}
+
+async function assertCliToolEnabled(toolName: import("../domain/types.js").ToolName): Promise<void> {
+  const context = await createConfigContext();
+  assertToolEnabled(context.config.toolPolicy, toolName);
+}
+
+function parseJsonOption(value: string | undefined, label: string): unknown {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw createDomainError("INVALID_ARGUMENT", `${label} must be valid JSON.`);
+  }
+}
+
 async function runAuthFlow(options: {
   action: "auth.login" | "auth.upgrade";
   requestedScope: "readonly" | "write";
 }): Promise<void> {
-  const context = await createRuntimeContext({ skipCache: true });
+  const context = await createAuthContext();
   const startedAt = Date.now();
 
   try {
@@ -185,7 +214,7 @@ auth
 auth
   .command("status")
   .action(async () => {
-    const context = await createRuntimeContext({ skipCache: true });
+    const context = await createAuthContext();
     const token = await context.tokenStore.get();
     process.stdout.write(
       `${jsonText({
@@ -229,8 +258,9 @@ program
 
 const sites = program.command("sites").description("Site commands.");
 sites.command("list").action(async () => {
+  await assertCliToolEnabled("gsc.sites.list");
   const context = await createRuntimeContext();
-  const service = await createService(context);
+  const service = await createServiceForTool(context, "gsc.sites.list");
   process.stdout.write(`${jsonText({ sites: await service.listSites() })}\n`);
 });
 
@@ -250,25 +280,25 @@ performance
   .option("--page-size <pageSize>")
   .option("--cursor <cursor>")
   .action(async (options) => {
+    const input = parsePerformanceQueryInput({
+      site: options.site,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      type: options.type,
+      dimensions: options.dimensions ? options.dimensions.split(",").map((value: string) => value.trim()) : undefined,
+      filters: parseJsonOption(options.filtersJson, "filters-json"),
+      aggregationType: options.aggregationType,
+      dataState: options.dataState,
+      fidelity: options.fidelity,
+      sourcePreference: options.sourcePreference,
+      pageSize: options.pageSize ? Number(options.pageSize) : undefined,
+      cursor: options.cursor ?? null,
+    });
+    await assertCliToolEnabled("gsc.performance.query");
     const context = await createRuntimeContext();
-    const service = await createService(context);
+    const service = await createServiceForTool(context, "gsc.performance.query");
     process.stdout.write(
-      `${jsonText(
-        await service.queryPerformance({
-          site: options.site,
-          startDate: options.startDate,
-          endDate: options.endDate,
-          type: options.type,
-          dimensions: options.dimensions ? options.dimensions.split(",").map((value: string) => value.trim()) : undefined,
-          filters: options.filtersJson ? JSON.parse(options.filtersJson) : undefined,
-          aggregationType: options.aggregationType,
-          dataState: options.dataState,
-          fidelity: options.fidelity,
-          sourcePreference: options.sourcePreference,
-          pageSize: options.pageSize ? Number(options.pageSize) : undefined,
-          cursor: options.cursor ?? null,
-        }),
-      )}\n`,
+      `${jsonText(await service.queryPerformance(input))}\n`,
     );
   });
 
@@ -280,20 +310,24 @@ performance
   .option("--type <type>")
   .option("--data-state <state>")
   .option("--page-size <pageSize>")
+  .option("--fidelity <mode>")
+  .option("--source-preference <source>")
   .action(async (options) => {
+    const input = parseSearchAppearanceQueryInput({
+      site: options.site,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      type: options.type,
+      dataState: options.dataState,
+      pageSize: options.pageSize ? Number(options.pageSize) : undefined,
+      fidelity: options.fidelity,
+      sourcePreference: options.sourcePreference,
+    });
+    await assertCliToolEnabled("gsc.performance.search_appearance.list");
     const context = await createRuntimeContext();
-    const service = await createService(context);
+    const service = await createServiceForTool(context, "gsc.performance.search_appearance.list");
     process.stdout.write(
-      `${jsonText(
-        await service.listSearchAppearance({
-          site: options.site,
-          startDate: options.startDate,
-          endDate: options.endDate,
-          type: options.type,
-          dataState: options.dataState,
-          pageSize: options.pageSize ? Number(options.pageSize) : undefined,
-        }),
-      )}\n`,
+      `${jsonText(await service.listSearchAppearance(input))}\n`,
     );
   });
 
@@ -302,9 +336,11 @@ sitemaps
   .command("list")
   .requiredOption("--site <site>")
   .action(async (options) => {
+    const input = parseSiteSelectorInput({ site: options.site });
+    await assertCliToolEnabled("gsc.sitemaps.list");
     const context = await createRuntimeContext();
-    const service = await createService(context);
-    process.stdout.write(`${jsonText(await service.listSitemaps(options.site))}\n`);
+    const service = await createServiceForTool(context, "gsc.sitemaps.list");
+    process.stdout.write(`${jsonText(await service.listSitemaps(input.site))}\n`);
   });
 
 sitemaps
@@ -312,9 +348,11 @@ sitemaps
   .requiredOption("--site <site>")
   .requiredOption("--feedpath <feedpath>")
   .action(async (options) => {
+    const input = parseSitemapGetInput({ site: options.site, feedpath: options.feedpath });
+    await assertCliToolEnabled("gsc.sitemaps.get");
     const context = await createRuntimeContext();
-    const service = await createService(context);
-    process.stdout.write(`${jsonText(await service.getSitemap(options.site, options.feedpath))}\n`);
+    const service = await createServiceForTool(context, "gsc.sitemaps.get");
+    process.stdout.write(`${jsonText(await service.getSitemap(input.site, input.feedpath))}\n`);
   });
 
 const url = program.command("url").description("URL commands.");
@@ -322,10 +360,13 @@ url
   .command("inspect")
   .requiredOption("--site <site>")
   .requiredOption("--url <url>")
+  .option("--force-refresh", "Bypass the local inspection cache")
   .action(async (options) => {
+    const input = parseUrlInspectionInput({ site: options.site, url: options.url, forceRefresh: Boolean(options.forceRefresh) });
+    await assertCliToolEnabled("gsc.url.inspect");
     const context = await createRuntimeContext();
-    const service = await createService(context);
-    process.stdout.write(`${jsonText(await service.inspectUrl(options.site, options.url))}\n`);
+    const service = await createServiceForTool(context, "gsc.url.inspect");
+    process.stdout.write(`${jsonText(await service.inspectUrl(input))}\n`);
   });
 
 const serve = program.command("serve").description("Serve the MCP server.");
