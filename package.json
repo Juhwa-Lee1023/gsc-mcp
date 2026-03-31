@@ -2,13 +2,30 @@
   "name": "gsc-mcp",
   "version": "0.1.0",
   "description": "A narrow, reliable Google Search Console focused MCP server and CLI.",
+  "license": "UNLICENSED",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Juhwa-Lee1023/gsc-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Juhwa-Lee1023/gsc-mcp/issues"
+  },
+  "homepage": "https://github.com/Juhwa-Lee1023/gsc-mcp#readme",
+  "keywords": [
+    "mcp",
+    "google-search-console",
+    "search-console",
+    "cli",
+    "typescript"
+  ],
   "bin": {
     "gsc-mcp": "./dist/index.js"
   },
   "files": [
     "dist",
+    "LICENSE",
     "README.md",
     ".env.example",
     "gsc-mcp.config.example.yaml"
@@ -18,8 +35,10 @@
   },
   "scripts": {
     "build": "tsup",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
     "clean": "rm -rf dist .tmp coverage",
     "dev": "tsx src/cli/index.ts",
+    "prepack": "pnpm build",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",

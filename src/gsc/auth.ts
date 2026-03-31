@@ -9,6 +9,13 @@ import { stableHash } from "../utils/crypto.js";
 import { openSystemBrowser } from "../utils/browser.js";
 import { GOOGLE_SCOPES } from "./scopes.js";
 
+const DEFAULT_LOOPBACK_TIMEOUT_MS = 5 * 60 * 1000;
+
+interface LoginWithLoopbackOptions {
+  timeoutMs?: number;
+  onManualAuthorizationUrl?: (authUrl: string, details: { browserError: string }) => void;
+}
+
 export function createOAuthClient(env: EnvConfig, redirectUri: string): OAuth2Client {
   return new OAuth2Client({
     clientId: env.googleClientId,
@@ -69,9 +76,15 @@ export async function createAuthorizedClient(
   };
 }
 
-export async function loginWithLoopback(env: EnvConfig, tokenStore: TokenStore, scopeMode: ScopeMode): Promise<TokenRecord> {
+export async function loginWithLoopback(
+  env: EnvConfig,
+  tokenStore: TokenStore,
+  scopeMode: ScopeMode,
+  options: LoginWithLoopbackOptions = {},
+): Promise<TokenRecord> {
   const state = randomBytes(16).toString("hex");
-  const { server, redirectUri, codePromise } = await startLoopbackServer(state);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_LOOPBACK_TIMEOUT_MS;
+  const { server, redirectUri, codePromise } = await startLoopbackServer(state, timeoutMs);
   const oauthClient = createOAuthClient(env, redirectUri);
   const verifier = await oauthClient.generateCodeVerifierAsync();
   const authUrl = oauthClient.generateAuthUrl({
@@ -85,7 +98,13 @@ export async function loginWithLoopback(env: EnvConfig, tokenStore: TokenStore, 
   });
 
   try {
-    await openSystemBrowser(authUrl);
+    try {
+      await openSystemBrowser(authUrl);
+    } catch (error) {
+      options.onManualAuthorizationUrl?.(authUrl, {
+        browserError: error instanceof Error ? error.message : String(error),
+      });
+    }
     const code = await codePromise;
     const tokenResponse = await oauthClient.getToken({
       code,
@@ -102,8 +121,14 @@ export async function loginWithLoopback(env: EnvConfig, tokenStore: TokenStore, 
     await tokenStore.set(record);
     return record;
   } catch (error) {
-    throw createDomainError("AUTH_CALLBACK_FAILED", "OAuth login failed.", false, {
-      error: error instanceof Error ? error.message : String(error),
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const userMessage = errorMessage.includes("Timed out waiting for OAuth callback")
+      ? "Timed out waiting for the OAuth callback. Re-run the auth command and open the printed URL manually if needed."
+      : "OAuth login failed.";
+    throw createDomainError("AUTH_CALLBACK_FAILED", userMessage, false, {
+      error: errorMessage,
+      authUrl,
+      timeoutMs,
     });
   } finally {
     server.close();
@@ -119,17 +144,43 @@ export function createAccountCacheScope(tokenRecord: TokenRecord): string {
   });
 }
 
-async function startLoopbackServer(state: string): Promise<{
+async function startLoopbackServer(state: string, timeoutMs: number): Promise<{
   server: http.Server;
   redirectUri: string;
   codePromise: Promise<string>;
 }> {
-  let resolveCode: ((code: string) => void) | undefined;
-  let rejectCode: ((reason?: unknown) => void) | undefined;
+  let settled = false;
+  let timeoutHandle: NodeJS.Timeout | undefined;
+  let resolvePromise: ((code: string) => void) | undefined;
+  let rejectPromise: ((reason?: unknown) => void) | undefined;
+  const finishResolve = (code: string) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+    resolvePromise?.(code);
+  };
+  const finishReject = (reason?: unknown) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+    rejectPromise?.(reason);
+  };
   const codePromise = new Promise<string>((resolve, reject) => {
-    resolveCode = resolve;
-    rejectCode = reject;
+    resolvePromise = resolve;
+    rejectPromise = reject;
   });
+  timeoutHandle = setTimeout(() => {
+    finishReject(new Error(`Timed out waiting for OAuth callback after ${Math.round(timeoutMs / 1000)} seconds.`));
+  }, timeoutMs);
+  timeoutHandle.unref?.();
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
@@ -140,19 +191,24 @@ async function startLoopbackServer(state: string): Promise<{
     if (error) {
       response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
       response.end(`OAuth failed: ${error}\n`);
-      rejectCode?.(new Error(error));
+      finishReject(new Error(error));
       return;
     }
     if (!code || returnedState !== state) {
       response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
       response.end("Invalid OAuth callback.\n");
-      rejectCode?.(new Error("Invalid state or code"));
+      finishReject(new Error("Invalid state or code"));
       return;
     }
 
     response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
     response.end("Authorization complete. You can return to the terminal.\n");
-    resolveCode?.(code);
+    finishResolve(code);
+  });
+  server.once("close", () => {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
   });
 
   return new Promise((resolve, reject) => {

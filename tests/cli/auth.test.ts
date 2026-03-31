@@ -68,4 +68,28 @@ describe("cli auth", () => {
     const parsed = JSON.parse(result.stdout);
     expect(parsed.linked).toBe(false);
   });
+
+  it("logs out with env only and no app config", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "gsc-mcp-auth-logout-"));
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const cliEntry = path.join(repoRoot, "src/cli/index.ts");
+    const tsxBin = path.join(repoRoot, "node_modules/.bin/tsx");
+
+    const result = await execFileAsync(tsxBin, [cliEntry, "auth", "logout"], {
+      cwd,
+      env: {
+        ...process.env,
+        GOOGLE_CLIENT_ID: "test-client-id",
+        GOOGLE_CLIENT_SECRET: "test-client-secret",
+        GSC_MCP_DATA_DIR: cwd,
+      },
+    });
+
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed).toEqual({
+      tokenStore: expect.any(String),
+      linked: false,
+      removed: false,
+    });
+  });
 });
