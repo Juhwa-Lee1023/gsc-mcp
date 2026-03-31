@@ -49,6 +49,11 @@ describe("mcp server", () => {
     }
 
     const parsed = JSON.parse(firstContent.text);
+    expect(parsed.beta).toBe(true);
+    expect(parsed.productPositioning).toBe("read_only_inspector");
+    expect(parsed.liveApiOnly).toBe(true);
+    expect(parsed.writeToolsImplemented).toBe(false);
+    expect(parsed.exactDetailModeImplemented).toBe(false);
     expect(parsed.tools).not.toContain("gsc.sites.list");
     expect(parsed.resources).not.toContain("gsc://sites");
     expect(parsed.prompts).not.toContain("gsc-summary");
@@ -98,7 +103,12 @@ describe("mcp server", () => {
     if (!firstContent || !("text" in firstContent)) {
       throw new Error("Expected text resource content.");
     }
-    expect(firstContent.text).toContain("\"transport\": \"stdio\"");
+    const parsed = JSON.parse(firstContent.text);
+    expect(parsed.transport).toBe("stdio");
+    expect(parsed.liveApiOnly).toBe(true);
+    expect(parsed.notes).toContain(
+      "This beta build is a read-only Search Console inspector/debugger, not a management suite.",
+    );
   });
 
   it("does not register tools disabled by policy", async () => {

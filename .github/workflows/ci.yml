@@ -40,3 +40,8 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Built CLI smoke test
+        run: |
+          mkdir -p .tmp/ci-smoke
+          GSC_MCP_DATA_DIR=.tmp/ci-smoke node dist/index.js auth status

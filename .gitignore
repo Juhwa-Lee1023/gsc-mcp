@@ -4,6 +4,9 @@ node_modules
 .tmp
 .env
 .DS_Store
+__MACOSX
 coverage
 .gsc-mcp
+gsc-mcp-dev-pack-*
+*.tgz
 pnpm-debug.log*

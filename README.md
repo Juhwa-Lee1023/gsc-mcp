@@ -1,9 +1,11 @@
 # gsc-mcp
 
-`gsc-mcp` is a narrow, read-only-first MCP server and companion CLI for Google Search Console.
-It focuses on reliable property access, honest Search Console analytics, and a small tool surface that is easy to reason about.
+`gsc-mcp` is a narrow, read-only-first Search Console inspector/debugger with an MCP server and companion CLI.
+It focuses on reliable property access, honest Search Console analytics, and a small tool surface that is easy to reason about for solo developers and local agent workflows.
 
-## v1 Scope
+This beta is intentionally not a broad Search Console management suite. It is best treated as a Search Console copilot for inspection, debugging, and careful reporting.
+
+## v1 Beta Scope
 
 This first version ships:
 
@@ -40,13 +42,15 @@ This first version ships:
 1. Install dependencies.
 2. Copy `.env.example` to `.env` and fill in OAuth values.
 3. Run `gsc-mcp auth login --scope readonly` to link the local account. Auth commands only require `.env`.
-4. Copy `gsc-mcp.config.example.yaml` to `gsc-mcp.config.yaml` and define allowed properties before using service or MCP commands.
+4. Run `gsc-mcp auth status` if you want to confirm the local token state before configuring properties.
+5. Copy `gsc-mcp.config.example.yaml` to `gsc-mcp.config.yaml` and define allowed properties before using service or MCP commands.
 
 ```bash
 pnpm install
 cp .env.example .env
-cp gsc-mcp.config.example.yaml gsc-mcp.config.yaml
 pnpm dev auth login --scope readonly
+pnpm dev auth status
+cp gsc-mcp.config.example.yaml gsc-mcp.config.yaml
 ```
 
 ### `.env`
@@ -89,6 +93,8 @@ toolPolicy:
 
 ## Local Run
 
+Auth commands work with `.env` only. Service commands and the MCP server still require an allowlist config.
+
 Development:
 
 ```bash
@@ -108,7 +114,7 @@ pnpm start -- doctor
 
 - `gsc-mcp init` creates starter `.env` and `gsc-mcp.config.yaml` files if they are missing.
 - `gsc-mcp auth login --scope readonly|write` links a local Google OAuth token. If browser auto-open fails, the CLI prints the authorization URL for manual use.
-- `gsc-mcp auth upgrade --scope write` requests broader OAuth scope later, but it does not add write tools to the v1 server surface.
+- `gsc-mcp auth upgrade --scope write` can request broader Google OAuth scope later, but it does not unlock additional beta tools or turn this build into a management suite.
 - `gsc-mcp auth status` shows the current local token state.
 - `gsc-mcp auth logout` deletes the locally stored OAuth token.
 - `gsc-mcp config show` prints resolved config.
@@ -149,6 +155,7 @@ pnpm start -- doctor
 ## Search Console Caveats
 
 Search Console data is not fully exhaustive, so `gsc-mcp` always exposes accuracy metadata instead of pretending every query is exact.
+This beta should be used as an inspector/debugger, not as a guaranteed exhaustive export layer.
 
 For performance responses, expect:
 
@@ -160,6 +167,7 @@ For performance responses, expect:
 Important caveats:
 
 - `page` and `query` dimensions can return top-row-limited results
+- even after daily shard pagination, page/query detail results still inherit live Search Console API top-row behavior and must not be treated as exhaustive exports
 - fresh data can be incomplete even when the query shape is valid
 - URL Inspection shows Google's indexed view, not a live fetch
 - long summary queries are chunked by `queryPolicy.summaryMaxDays` within a bounded safety limit; long detail queries are either daily-split or rejected depending on range and query shape
@@ -183,6 +191,7 @@ pnpm build
 Intentionally deferred to later phases:
 
 - Streamable HTTP transport
+- broad Search Console management workflows
 - write tools enabled by default
 - hosted auth portal
 - auth session management beyond local login/status/logout
@@ -201,4 +210,4 @@ The expected next step is to add a second transport entrypoint that reuses the e
 
 The server keeps stdout protocol-clean for MCP. Human-readable diagnostics go to stderr, and audit logging is redacted before it touches disk.
 
-The repository is currently published as a beta codebase. See [LICENSE](./LICENSE) for usage terms.
+This repository is packaged for a narrow public beta as a read-only Search Console inspector/debugger. See [LICENSE](./LICENSE) for usage terms.

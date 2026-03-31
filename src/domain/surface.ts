@@ -1,4 +1,4 @@
-import { areToolsEnabled } from "./tool-policy.js";
+import { areToolsEnabled, listEffectiveEnabledTools } from "./tool-policy.js";
 import type { ToolName, ToolPolicy } from "./types.js";
 
 export const STATIC_RESOURCE_URIS = ["gsc://capabilities", "gsc://policies/current"] as const;
@@ -51,4 +51,22 @@ export function listAvailableResourceUris(toolPolicy: ToolPolicy): ResourceUri[]
       (definition) => definition.uri,
     ),
   ];
+}
+
+export function buildCapabilitySurface(toolPolicy: ToolPolicy) {
+  return {
+    beta: true,
+    productPositioning: "read_only_inspector",
+    liveApiOnly: true,
+    writeToolsImplemented: false,
+    exactDetailModeImplemented: false,
+    tools: listEffectiveEnabledTools(toolPolicy),
+    resources: listAvailableResourceUris(toolPolicy),
+    prompts: listAvailablePromptNames(toolPolicy),
+    notes: [
+      "This beta build is a read-only Search Console inspector/debugger, not a management suite.",
+      "Performance data comes from the live Search Console API only in v1.",
+      "Page/query detail results can still be top-row-limited even after shard pagination.",
+    ],
+  };
 }
