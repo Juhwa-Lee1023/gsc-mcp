@@ -10,21 +10,21 @@ export const READ_ONLY_TOOLS = [
   "gsc.sitemaps.get",
 ] as const;
 
-export const DISABLED_WRITE_TOOLS = [
-  "gsc.sites.add",
-  "gsc.sites.delete",
-  "gsc.sitemaps.submit",
-  "gsc.sitemaps.delete",
-] as const;
+export const SEARCH_TYPES = ["web", "image", "video", "news", "discover", "googleNews"] as const;
+export const PERFORMANCE_DIMENSIONS = ["country", "date", "device", "hour", "page", "query", "searchAppearance"] as const;
+export const AGGREGATION_TYPES = ["auto", "byPage", "byProperty"] as const;
+export const DATA_STATES = ["final", "all", "hourly_all"] as const;
+export const FIDELITY_MODES = ["best_effort", "prefer_exact"] as const;
+export const SOURCE_PREFERENCES = ["auto", "live_api"] as const;
 
-export type ToolName = (typeof READ_ONLY_TOOLS)[number] | (typeof DISABLED_WRITE_TOOLS)[number];
+export type ToolName = (typeof READ_ONLY_TOOLS)[number];
 export type ScopeMode = "readonly" | "write";
-export type SearchType = "web" | "image" | "video" | "news" | "discover" | "googleNews";
-export type PerformanceDimension = "country" | "date" | "device" | "hour" | "page" | "query" | "searchAppearance";
-export type AggregationType = "auto" | "byPage" | "byProperty";
-export type DataState = "final" | "all" | "hourly_all";
-export type FidelityMode = "best_effort" | "prefer_exact";
-export type SourcePreference = "auto" | "live_api" | "mirror" | "bulk_export";
+export type SearchType = (typeof SEARCH_TYPES)[number];
+export type PerformanceDimension = (typeof PERFORMANCE_DIMENSIONS)[number];
+export type AggregationType = (typeof AGGREGATION_TYPES)[number];
+export type DataState = (typeof DATA_STATES)[number];
+export type FidelityMode = (typeof FIDELITY_MODES)[number];
+export type SourcePreference = (typeof SOURCE_PREFERENCES)[number];
 export type AccuracyClass = "exact" | "top_rows_only" | "fresh_incomplete" | "top_rows_and_fresh";
 export type AccuracyReason =
   | "ANONYMIZED_QUERIES"
@@ -35,6 +35,7 @@ export type AccuracyReason =
   | "AUTO_AGGREGATION";
 export type CostClass = "low" | "medium" | "high" | "critical";
 export type PropertyType = "domain" | "url-prefix";
+export type SplitStrategy = "none" | "summary_chunked" | "detail_daily";
 
 export interface EnvConfig {
   googleClientId: string;
@@ -49,7 +50,6 @@ export interface PropertyConfig {
   alias: string;
   siteUrl: string;
   allowRead: boolean;
-  allowWrite: boolean;
 }
 
 export interface ToolPolicy {
@@ -62,7 +62,6 @@ export interface QueryPolicy {
   summaryMaxDays: number;
   detailMaxDays: number;
   detailSplitDailyAfterDays: number;
-  blockExactWithPageOrQueryWithoutBulkExport: boolean;
 }
 
 export interface CacheConfig {
@@ -155,6 +154,7 @@ export interface AccuracyMetadata {
   firstIncompleteHour?: string;
   costClass: CostClass;
   splitApplied: boolean;
+  splitStrategy: SplitStrategy;
 }
 
 export interface PerformanceQueryResult {
@@ -174,6 +174,7 @@ export interface PerformanceQueryPlan {
   startRow: number;
   pageSize: number;
   splitApplied: boolean;
+  splitStrategy: SplitStrategy;
   dateRanges: Array<{ startDate: string; endDate: string }>;
   isDetail: boolean;
   costClass: CostClass;
@@ -268,6 +269,9 @@ export interface UrlInspectionResult {
   canonicalSiteUrl: string;
   inspectionUrl: string;
   inspectionType: "indexed_view";
+  metadata: {
+    cacheHit: boolean;
+  };
   raw: Record<string, unknown>;
 }
 
@@ -296,7 +300,6 @@ export interface SiteRecord {
   canonicalSiteUrl: string;
   permissionLevel: string;
   readEnabled: boolean;
-  writeEnabled: boolean;
 }
 
 export interface RuntimeContext {
@@ -308,4 +311,17 @@ export interface RuntimeContext {
   tokenStore: TokenStore;
   cache: CacheStore;
   cursorSigningSecret: string;
+}
+
+export interface ConfigContext {
+  env: EnvConfig;
+  config: AppConfig;
+  properties: ResolvedProperty[];
+}
+
+export interface AuthContext {
+  env: EnvConfig;
+  logger: Logger;
+  audit: AuditSink;
+  tokenStore: TokenStore;
 }

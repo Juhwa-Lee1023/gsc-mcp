@@ -21,12 +21,27 @@ export async function createAuthorizedClient(env: EnvConfig, tokenStore: TokenSt
   oauthClient: OAuth2Client;
   tokenRecord: TokenRecord;
 }> {
-  const tokenRecord = await tokenStore.get();
-  if (!tokenRecord) {
+  const storedTokenRecord = await tokenStore.get();
+  if (!storedTokenRecord) {
     throw createDomainError("GOOGLE_ACCOUNT_NOT_LINKED", "No stored Google token found. Run `gsc-mcp auth login` first.");
   }
   const oauthClient = createOAuthClient(env, "http://127.0.0.1");
+  let tokenRecord = storedTokenRecord;
   oauthClient.setCredentials(tokenRecord.credentials);
+  oauthClient.on("tokens", (tokens) => {
+    if (Object.keys(tokens).length === 0) {
+      return;
+    }
+    tokenRecord = {
+      ...tokenRecord,
+      credentials: {
+        ...tokenRecord.credentials,
+        ...tokens,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    void tokenStore.set(tokenRecord);
+  });
   return {
     oauthClient,
     tokenRecord,

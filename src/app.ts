@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { loadConfig, loadEnv } from "./config/load.js";
-import type { CacheStore, RuntimeContext } from "./domain/types.js";
+import type { AuthContext, CacheStore, ConfigContext, RuntimeContext } from "./domain/types.js";
 import { FileAuditSink } from "./security/audit.js";
 import { createLogger } from "./security/logger.js";
 import { loadOrCreateSecret } from "./security/local-secret.js";
@@ -23,34 +23,73 @@ class NoopCacheStore implements CacheStore {
   async close(): Promise<void> {}
 }
 
-export async function createRuntimeContext(options: {
+const defaultAuthLogging = {
+  redactPageUrls: true,
+  redactQueryStrings: true,
+};
+
+async function createAuthArtifacts(env: import("./domain/types.js").EnvConfig, logging = defaultAuthLogging): Promise<AuthContext> {
+  await ensureDir(env.dataDir);
+  return {
+    env,
+    logger: createLogger(env.debug, logging),
+    audit: new FileAuditSink(env.dataDir, logging),
+    tokenStore: await createTokenStore({
+      dataDir: env.dataDir,
+      configuredSecret: env.fileTokenSecret,
+    }),
+  };
+}
+
+export async function createAuthContext(options: {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}): Promise<AuthContext> {
+  const cwd = options.cwd ?? process.cwd();
+  const env = loadEnv(options.env ?? process.env, cwd);
+  return createAuthArtifacts(env);
+}
+
+export async function createConfigContext(options: {
   cwd?: string;
   configPath?: string;
   env?: NodeJS.ProcessEnv;
-  skipCache?: boolean;
-} = {}): Promise<RuntimeContext> {
+} = {}): Promise<ConfigContext> {
   const cwd = options.cwd ?? process.cwd();
   const env = loadEnv(options.env ?? process.env, cwd);
   const configPath = options.configPath
     ? path.resolve(cwd, options.configPath)
     : path.resolve(cwd, "gsc-mcp.config.yaml");
   const config = await loadConfig(configPath);
-  await ensureDir(env.dataDir);
-  const cursorSigningSecret = await loadOrCreateSecret({
-    secretPath: path.join(env.dataDir, "security", "cursor-signing.key"),
-    configuredSecret: env.fileTokenSecret,
-  });
 
   return {
     env,
     config,
     properties: config.properties.map(resolvePropertyConfig),
-    logger: createLogger(env.debug, config.logging),
-    audit: new FileAuditSink(env.dataDir, config.logging),
-    tokenStore: await createTokenStore({
-      dataDir: env.dataDir,
-      configuredSecret: env.fileTokenSecret,
-    }),
+  };
+}
+
+export async function createRuntimeContext(options: {
+  cwd?: string;
+  configPath?: string;
+  env?: NodeJS.ProcessEnv;
+  skipCache?: boolean;
+} = {}): Promise<RuntimeContext> {
+  const { env, config, properties } = await createConfigContext(options);
+  await ensureDir(env.dataDir);
+  const cursorSigningSecret = await loadOrCreateSecret({
+    secretPath: path.join(env.dataDir, "security", "cursor-signing.key"),
+    configuredSecret: env.fileTokenSecret,
+  });
+  const authArtifacts = await createAuthArtifacts(env, config.logging);
+
+  return {
+    env,
+    config,
+    properties,
+    logger: authArtifacts.logger,
+    audit: authArtifacts.audit,
+    tokenStore: authArtifacts.tokenStore,
     cursorSigningSecret,
     cache: options.skipCache
       ? new NoopCacheStore()

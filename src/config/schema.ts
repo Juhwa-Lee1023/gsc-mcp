@@ -1,18 +1,8 @@
 import { z } from "zod";
 
-const toolNameSchema = z.enum([
-  "gsc.sites.list",
-  "gsc.sites.get",
-  "gsc.performance.query",
-  "gsc.performance.search_appearance.list",
-  "gsc.url.inspect",
-  "gsc.sitemaps.list",
-  "gsc.sitemaps.get",
-  "gsc.sites.add",
-  "gsc.sites.delete",
-  "gsc.sitemaps.submit",
-  "gsc.sitemaps.delete",
-]);
+import { READ_ONLY_TOOLS } from "../domain/types.js";
+
+const toolNameSchema = z.enum(READ_ONLY_TOOLS);
 
 export const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1),
@@ -32,7 +22,6 @@ export const appConfigSchema = z.object({
       alias: z.string().min(1),
       siteUrl: z.string().min(1),
       allowRead: z.boolean(),
-      allowWrite: z.boolean(),
     }),
   ),
   toolPolicy: z.object({
@@ -44,7 +33,6 @@ export const appConfigSchema = z.object({
     summaryMaxDays: z.number().int().positive(),
     detailMaxDays: z.number().int().positive(),
     detailSplitDailyAfterDays: z.number().int().positive(),
-    blockExactWithPageOrQueryWithoutBulkExport: z.boolean(),
   }),
   cache: z.object({
     enabled: z.boolean().default(true),

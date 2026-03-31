@@ -13,7 +13,7 @@ export function createMcpServer(context: RuntimeContext): McpServer {
   });
   registerTools(server, context);
   registerResources(server, context);
-  registerPrompts(server);
+  registerPrompts(server, context);
   return server;
 }
 

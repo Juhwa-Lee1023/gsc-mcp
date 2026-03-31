@@ -1,7 +1,8 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { toDomainError } from "../../domain/errors.js";
-import { listEffectiveEnabledTools } from "../../domain/tool-policy.js";
+import { listAvailablePromptNames, listAvailableResourceUris } from "../../domain/surface.js";
+import { assertToolEnabled, isToolEnabled, listEffectiveEnabledTools } from "../../domain/tool-policy.js";
 import type { RuntimeContext } from "../../domain/types.js";
 import { createAccountCacheScope, createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
@@ -13,7 +14,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
   const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
   return new GscService(
     context.config,
-    new GoogleSearchConsoleClient(oauthClient),
+    new GoogleSearchConsoleClient(oauthClient, context.logger),
     context.cache,
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
@@ -38,18 +39,8 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
         defaultScope: context.config.google.defaultScope,
         readOnlyByDefault: true,
         tools: listEffectiveEnabledTools(context.config.toolPolicy),
-        resources: [
-          "gsc://capabilities",
-          "gsc://policies/current",
-          "gsc://sites",
-          "gsc://site/{site}/sitemaps",
-        ],
-        prompts: [
-          "gsc-summary",
-          "gsc-compare-periods",
-          "gsc-debug-url",
-          "gsc-sitemap-audit",
-        ],
+        resources: listAvailableResourceUris(context.config.toolPolicy),
+        prompts: listAvailablePromptNames(context.config.toolPolicy),
       }),
   );
 
@@ -68,56 +59,61 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
           alias: property.alias,
           siteUrl: property.canonicalSiteUrl,
           allowRead: property.allowRead,
-          allowWrite: property.allowWrite,
         })),
         toolPolicy: context.config.toolPolicy,
         queryPolicy: context.config.queryPolicy,
       }),
   );
 
-  server.registerResource(
-    "gsc://sites",
-    "gsc://sites",
-    {
-      title: "Allowlisted sites",
-      description: "Allowlisted Search Console sites joined with Google visibility when auth is available.",
-      mimeType: "application/json",
-    },
-    async (uri) => {
-      try {
-        const service = await createService(context);
-        return jsonResource(uri.toString(), { sites: await service.listSites() });
-      } catch (error) {
-        return jsonResource(uri.toString(), {
-          sites: [],
-          error: toDomainError(error).toJSON(),
-        });
-      }
-    },
-  );
-
-  server.registerResource(
-    "gsc://site/{site}/sitemaps",
-    new ResourceTemplate("gsc://site/{site}/sitemaps", {
-      list: undefined,
-      complete: {
-        site: async () => context.properties.map((property) => property.alias),
+  if (isToolEnabled(context.config.toolPolicy, "gsc.sites.list")) {
+    server.registerResource(
+      "gsc://sites",
+      "gsc://sites",
+      {
+        title: "Allowlisted sites",
+        description: "Allowlisted Search Console sites joined with Google visibility when auth is available.",
+        mimeType: "application/json",
       },
-    }),
-    {
-      title: "Property sitemaps",
-      description: "Sitemaps for one allowlisted Search Console property.",
-      mimeType: "application/json",
-    },
-    async (uri, variables) => {
-      try {
-        const service = await createService(context);
-        return jsonResource(uri.toString(), await service.listSitemaps(String(variables.site)));
-      } catch (error) {
-        return jsonResource(uri.toString(), {
-          error: toDomainError(error).toJSON(),
-        });
-      }
-    },
-  );
+      async (uri) => {
+        try {
+          assertToolEnabled(context.config.toolPolicy, "gsc.sites.list");
+          const service = await createService(context);
+          return jsonResource(uri.toString(), { sites: await service.listSites() });
+        } catch (error) {
+          return jsonResource(uri.toString(), {
+            sites: [],
+            error: toDomainError(error).toJSON(),
+          });
+        }
+      },
+    );
+  }
+
+  if (isToolEnabled(context.config.toolPolicy, "gsc.sitemaps.list")) {
+    server.registerResource(
+      "gsc://site/{site}/sitemaps",
+      new ResourceTemplate("gsc://site/{site}/sitemaps", {
+        list: undefined,
+        complete: {
+          site: async () => context.properties.map((property) => property.alias),
+        },
+      }),
+      {
+        title: "Property sitemaps",
+        description: "Sitemaps for one allowlisted Search Console property.",
+        mimeType: "application/json",
+      },
+      async (uri, variables) => {
+        try {
+          assertToolEnabled(context.config.toolPolicy, "gsc.sitemaps.list");
+          const service = await createService(context);
+          return jsonResource(uri.toString(), await service.listSitemaps(String(variables.site)));
+        } catch (error) {
+          return jsonResource(uri.toString(), {
+            error: toDomainError(error).toJSON(),
+          });
+        }
+      },
+    );
+  }
 }

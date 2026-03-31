@@ -22,13 +22,11 @@ export const testConfig: AppConfig = {
       alias: "main",
       siteUrl: "sc-domain:example.com",
       allowRead: true,
-      allowWrite: false,
     },
     {
       alias: "blog",
       siteUrl: "https://example.com/blog/",
       allowRead: true,
-      allowWrite: false,
     },
   ],
   toolPolicy: {
@@ -41,19 +39,13 @@ export const testConfig: AppConfig = {
       "gsc.sitemaps.list",
       "gsc.sitemaps.get",
     ],
-    disabledTools: [
-      "gsc.sites.add",
-      "gsc.sites.delete",
-      "gsc.sitemaps.submit",
-      "gsc.sitemaps.delete",
-    ],
+    disabledTools: [],
   },
   queryPolicy: {
     defaultDataState: "final",
     summaryMaxDays: 90,
     detailMaxDays: 31,
     detailSplitDailyAfterDays: 7,
-    blockExactWithPageOrQueryWithoutBulkExport: true,
   },
   cache: {
     enabled: true,

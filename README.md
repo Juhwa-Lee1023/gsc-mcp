@@ -13,6 +13,7 @@ This first version ships:
 - read-only tools only
 - PT-aware Search Console date handling
 - Search Analytics query planning with accuracy metadata
+- live API only, with no mirror or bulk-export routing in v1
 - URL Inspection, sitemaps, and sites support
 - SQLite-backed caching
 - structured logs and redacted audit events
@@ -73,7 +74,6 @@ properties:
   - alias: main
     siteUrl: sc-domain:example.com
     allowRead: true
-    allowWrite: false
 
 toolPolicy:
   enabledTools:
@@ -84,11 +84,7 @@ toolPolicy:
     - gsc.url.inspect
     - gsc.sitemaps.list
     - gsc.sitemaps.get
-  disabledTools:
-    - gsc.sites.add
-    - gsc.sites.delete
-    - gsc.sitemaps.submit
-    - gsc.sitemaps.delete
+  disabledTools: []
 ```
 
 ## Local Run
@@ -112,7 +108,7 @@ pnpm start -- doctor
 
 - `gsc-mcp init` creates starter `.env` and `gsc-mcp.config.yaml` files if they are missing.
 - `gsc-mcp auth login --scope readonly|write` links a local Google OAuth token.
-- `gsc-mcp auth upgrade --scope write` requests write scope later, if you choose to enable write policies.
+- `gsc-mcp auth upgrade --scope write` requests broader OAuth scope later, but it does not add write tools to the v1 server surface.
 - `gsc-mcp auth status` shows the current local token state.
 - `gsc-mcp config show` prints resolved config.
 - `gsc-mcp doctor` prints local diagnostics.
@@ -121,7 +117,7 @@ pnpm start -- doctor
 - `gsc-mcp performance query` runs a Search Analytics query.
 - `gsc-mcp performance search-appearance` runs the official `searchAppearance` helper flow.
 - `gsc-mcp sitemaps list` and `gsc-mcp sitemaps get` inspect sitemaps.
-- `gsc-mcp url inspect` inspects an indexed URL for an allowlisted property.
+- `gsc-mcp url inspect [--force-refresh]` inspects an indexed URL for an allowlisted property and can bypass the local inspection cache.
 
 ## MCP Surface
 
@@ -165,6 +161,9 @@ Important caveats:
 - `page` and `query` dimensions can return top-row-limited results
 - fresh data can be incomplete even when the query shape is valid
 - URL Inspection shows Google's indexed view, not a live fetch
+- long summary queries are chunked by `queryPolicy.summaryMaxDays`; long detail queries are either daily-split or rejected depending on range and query shape
+- `sourcePreference` only supports `auto` and `live_api` in v1
+- `fidelity=prefer_exact` is rejected for page/query detail requests because live API top-row behavior cannot guarantee exactness
 - `dataState` defaults to `final`
 - `type` is preferred over deprecated `searchType`
 

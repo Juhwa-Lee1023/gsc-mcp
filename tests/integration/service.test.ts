@@ -129,7 +129,7 @@ describe("gsc service", () => {
       (selector) => resolveAllowedProperty(testConfig, selector),
     );
 
-    await expect(service.inspectUrl("blog", "https://example.com/shop/page")).rejects.toThrow(/outside/i);
+    await expect(service.inspectUrl({ site: "blog", url: "https://example.com/shop/page" })).rejects.toThrow(/outside/i);
     expect(audit.events).toHaveLength(1);
     expect(audit.events[0]).toMatchObject({
       action: "tool.invoke",
@@ -279,5 +279,147 @@ describe("gsc service", () => {
     });
 
     expect(result.rows).toHaveLength(1);
+  });
+
+  it("paginates split detail shards until each shard is exhausted", async () => {
+    let requestCount = 0;
+    class PaginatedShardClient extends MockGscClient {
+      override async querySearchAnalytics(...args: Parameters<GscClient["querySearchAnalytics"]>) {
+        const [, request] = args;
+        requestCount += 1;
+        if (request.startDate !== "2026-01-01") {
+          return {
+            rows: [],
+            responseAggregationType: "byPage" as const,
+          };
+        }
+        if (request.startRow === 0) {
+          return {
+            rows: Array.from({ length: 25_000 }, () => ({
+              keys: ["alpha"],
+              clicks: 1,
+              impressions: 10,
+              ctr: 0.1,
+              position: 2,
+            })),
+            responseAggregationType: "byPage" as const,
+          };
+        }
+        if (request.startRow === 25_000) {
+          return {
+            rows: [
+              {
+                keys: ["alpha"],
+                clicks: 2,
+                impressions: 10,
+                ctr: 0.2,
+                position: 2,
+              },
+            ],
+            responseAggregationType: "byPage" as const,
+          };
+        }
+        return {
+          rows: [],
+          responseAggregationType: "byPage" as const,
+        };
+      }
+    }
+
+    const service = new GscService(
+      testConfig,
+      new PaginatedShardClient(),
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    const result = await service.queryPerformance({
+      site: "main",
+      startDate: "2026-01-01",
+      endDate: "2026-01-08",
+      dimensions: ["query"],
+      pageSize: 10,
+    });
+
+    expect(requestCount).toBe(9);
+    expect(result.metadata.splitStrategy).toBe("detail_daily");
+    expect(result.rows[0]?.clicks).toBe(25_002);
+  });
+
+  it("chunks long summary ranges and merges chunk results", async () => {
+    let requestCount = 0;
+    class SummaryChunkClient extends MockGscClient {
+      override async querySearchAnalytics(...args: Parameters<GscClient["querySearchAnalytics"]>) {
+        const [, request] = args;
+        requestCount += 1;
+        return {
+          rows: [
+            {
+              keys: ["summary"],
+              clicks: request.startDate === "2026-01-01" ? 10 : 7,
+              impressions: 100,
+              ctr: 0.1,
+              position: 3,
+            },
+          ],
+          responseAggregationType: "byProperty" as const,
+        };
+      }
+    }
+
+    const service = new GscService(
+      testConfig,
+      new SummaryChunkClient(),
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    const result = await service.queryPerformance({
+      site: "main",
+      startDate: "2026-01-01",
+      endDate: "2026-05-01",
+    });
+
+    expect(requestCount).toBe(2);
+    expect(result.metadata.splitStrategy).toBe("summary_chunked");
+    expect(result.rows[0]?.clicks).toBe(17);
+  });
+
+  it("supports forceRefresh and reports cacheHit for URL inspection", async () => {
+    let inspectionRequests = 0;
+    class InspectionClient extends MockGscClient {
+      override async inspectUrl(...args: Parameters<GscClient["inspectUrl"]>) {
+        inspectionRequests += 1;
+        return super.inspectUrl(...args);
+      }
+    }
+
+    const service = new GscService(
+      testConfig,
+      new InspectionClient(),
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector) => resolveAllowedProperty(testConfig, selector),
+    );
+
+    const first = await service.inspectUrl({ site: "main", url: "https://example.com/page" });
+    const second = await service.inspectUrl({ site: "main", url: "https://example.com/page" });
+    const third = await service.inspectUrl({ site: "main", url: "https://example.com/page", forceRefresh: true });
+
+    expect(first.metadata.cacheHit).toBe(false);
+    expect(second.metadata.cacheHit).toBe(true);
+    expect(third.metadata.cacheHit).toBe(false);
+    expect(inspectionRequests).toBe(2);
   });
 });

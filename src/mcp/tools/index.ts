@@ -1,7 +1,19 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { isToolEnabled } from "../../domain/tool-policy.js";
+import {
+  performanceQueryInputShape,
+  parsePerformanceQueryInput,
+  parseSearchAppearanceQueryInput,
+  parseSiteSelectorInput,
+  parseSitemapGetInput,
+  parseUrlInspectionInput,
+  searchAppearanceQueryInputShape,
+  siteSelectorInputShape,
+  sitemapGetInputShape,
+  urlInspectionInputShape,
+} from "../../domain/inputs.js";
+import { assertToolEnabled, isToolEnabled } from "../../domain/tool-policy.js";
 import { createAccountCacheScope, createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
 import type { RuntimeContext, ToolName } from "../../domain/types.js";
@@ -9,34 +21,11 @@ import { GscService } from "../../gsc/service.js";
 import { resolveAllowedProperty } from "../../utils/site-url.js";
 import { errorToolResult, okToolResult } from "../helpers.js";
 
-const performanceInputSchema = {
-  site: z.string().min(1),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
-  type: z.enum(["web", "image", "video", "news", "discover", "googleNews"]).optional(),
-  dimensions: z.array(z.enum(["country", "date", "device", "hour", "page", "query", "searchAppearance"])).optional(),
-  filters: z
-    .array(
-      z.object({
-        dimension: z.enum(["country", "date", "device", "hour", "page", "query", "searchAppearance"]),
-        operator: z.enum(["contains", "equals", "notContains", "notEquals", "includingRegex", "excludingRegex"]),
-        expression: z.string().min(1),
-      }),
-    )
-    .optional(),
-  aggregationType: z.enum(["auto", "byPage", "byProperty"]).optional(),
-  dataState: z.enum(["final", "all", "hourly_all"]).optional(),
-  fidelity: z.enum(["best_effort", "prefer_exact"]).optional(),
-  sourcePreference: z.enum(["auto", "live_api", "mirror", "bulk_export"]).optional(),
-  pageSize: z.number().int().min(1).max(25_000).optional(),
-  cursor: z.string().nullable().optional(),
-};
-
 async function createService(context: RuntimeContext): Promise<GscService> {
   const { oauthClient, tokenRecord } = await createAuthorizedClient(context.env, context.tokenStore);
   return new GscService(
     context.config,
-    new GoogleSearchConsoleClient(oauthClient),
+    new GoogleSearchConsoleClient(oauthClient, context.logger),
     context.cache,
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
@@ -66,6 +55,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async () => {
       try {
+        assertToolEnabled(context.config.toolPolicy, "gsc.sites.list");
         const service = await createService(context);
         return okToolResult({ sites: await service.listSites() });
       } catch (error) {
@@ -78,7 +68,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     "gsc.sites.get",
     {
       description: "Get one allowlisted Search Console property by alias or raw allowlisted siteUrl.",
-      inputSchema: { site: z.string().min(1) },
+      inputSchema: siteSelectorInputShape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -88,8 +78,10 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async ({ site }) => {
       try {
+        assertToolEnabled(context.config.toolPolicy, "gsc.sites.get");
+        const input = parseSiteSelectorInput({ site });
         const service = await createService(context);
-        return okToolResult(await service.getSite(site) as unknown as Record<string, unknown>);
+        return okToolResult(await service.getSite(input.site) as unknown as Record<string, unknown>);
       } catch (error) {
         return errorToolResult(error);
       }
@@ -100,7 +92,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     "gsc.performance.query",
     {
       description: "Query Search Console performance data with PT date resolution and explicit accuracy metadata.",
-      inputSchema: performanceInputSchema,
+      inputSchema: performanceQueryInputShape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -110,8 +102,10 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async (input) => {
       try {
+        assertToolEnabled(context.config.toolPolicy, "gsc.performance.query");
+        const parsedInput = parsePerformanceQueryInput(input);
         const service = await createService(context);
-        return okToolResult(await service.queryPerformance(input) as unknown as Record<string, unknown>);
+        return okToolResult(await service.queryPerformance(parsedInput) as unknown as Record<string, unknown>);
       } catch (error) {
         return errorToolResult(error);
       }
@@ -122,14 +116,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     "gsc.performance.search_appearance.list",
     {
       description: "List available search appearance buckets using the official first-step Search Console flow.",
-      inputSchema: {
-        site: z.string().min(1),
-        startDate: z.string().min(1),
-        endDate: z.string().min(1),
-        type: z.enum(["web", "image", "video", "news", "discover", "googleNews"]).optional(),
-        dataState: z.enum(["final", "all", "hourly_all"]).optional(),
-        pageSize: z.number().int().min(1).max(25_000).optional(),
-      },
+      inputSchema: searchAppearanceQueryInputShape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -139,8 +126,10 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async (input) => {
       try {
+        assertToolEnabled(context.config.toolPolicy, "gsc.performance.search_appearance.list");
+        const parsedInput = parseSearchAppearanceQueryInput(input);
         const service = await createService(context);
-        return okToolResult(await service.listSearchAppearance(input) as unknown as Record<string, unknown>);
+        return okToolResult(await service.listSearchAppearance(parsedInput) as unknown as Record<string, unknown>);
       } catch (error) {
         return errorToolResult(error);
       }
@@ -151,10 +140,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     "gsc.url.inspect",
     {
       description: "Inspect one URL using Google's indexed view, not a live fetch.",
-      inputSchema: {
-        site: z.string().min(1),
-        url: z.string().url(),
-      },
+      inputSchema: urlInspectionInputShape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -162,10 +148,12 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         openWorldHint: false,
       },
     },
-    async ({ site, url }) => {
+    async ({ site, url, forceRefresh }) => {
       try {
+        assertToolEnabled(context.config.toolPolicy, "gsc.url.inspect");
+        const input = parseUrlInspectionInput({ site, url, forceRefresh });
         const service = await createService(context);
-        return okToolResult(await service.inspectUrl(site, url) as unknown as Record<string, unknown>);
+        return okToolResult(await service.inspectUrl(input) as unknown as Record<string, unknown>);
       } catch (error) {
         return errorToolResult(error);
       }
@@ -176,7 +164,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     "gsc.sitemaps.list",
     {
       description: "List sitemaps for an allowlisted Search Console property.",
-      inputSchema: { site: z.string().min(1) },
+      inputSchema: siteSelectorInputShape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -186,8 +174,10 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async ({ site }) => {
       try {
+        assertToolEnabled(context.config.toolPolicy, "gsc.sitemaps.list");
+        const input = parseSiteSelectorInput({ site });
         const service = await createService(context);
-        return okToolResult(await service.listSitemaps(site) as unknown as Record<string, unknown>);
+        return okToolResult(await service.listSitemaps(input.site) as unknown as Record<string, unknown>);
       } catch (error) {
         return errorToolResult(error);
       }
@@ -198,10 +188,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     "gsc.sitemaps.get",
     {
       description: "Get one sitemap entry for an allowlisted Search Console property.",
-      inputSchema: {
-        site: z.string().min(1),
-        feedpath: z.string().min(1),
-      },
+      inputSchema: sitemapGetInputShape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -211,8 +198,10 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async ({ site, feedpath }) => {
       try {
+        assertToolEnabled(context.config.toolPolicy, "gsc.sitemaps.get");
+        const input = parseSitemapGetInput({ site, feedpath });
         const service = await createService(context);
-        return okToolResult(await service.getSitemap(site, feedpath) as unknown as Record<string, unknown>);
+        return okToolResult(await service.getSitemap(input.site, input.feedpath) as unknown as Record<string, unknown>);
       } catch (error) {
         return errorToolResult(error);
       }

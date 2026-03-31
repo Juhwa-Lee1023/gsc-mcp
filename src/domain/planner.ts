@@ -11,6 +11,7 @@ import type {
   PerformanceQueryPlan,
   PerformanceRequestEcho,
   ResolvedProperty,
+  SplitStrategy,
 } from "./types.js";
 import { decodeCursor, encodeCursor } from "../utils/cursor.js";
 import { stableHash } from "../utils/crypto.js";
@@ -83,6 +84,19 @@ function predictReasons(intent: PerformanceRequestEcho, isDetail: boolean): Accu
   return [...reasons];
 }
 
+function chunkDateRanges(startDate: string, endDate: string, chunkSizeDays: number): Array<{ startDate: string; endDate: string }> {
+  const dates = enumeratePtDates(startDate, endDate);
+  const ranges: Array<{ startDate: string; endDate: string }> = [];
+  for (let index = 0; index < dates.length; index += chunkSizeDays) {
+    const chunk = dates.slice(index, index + chunkSizeDays);
+    ranges.push({
+      startDate: chunk[0]!,
+      endDate: chunk[chunk.length - 1]!,
+    });
+  }
+  return ranges;
+}
+
 export function createPerformanceQueryPlan(args: {
   config: AppConfig;
   property: ResolvedProperty;
@@ -122,25 +136,17 @@ export function createPerformanceQueryPlan(args: {
     throw createDomainError("INVALID_ARGUMENT", "The `hour` dimension requires `dataState=hourly_all`.");
   }
 
-  const maxDays = detail ? config.queryPolicy.detailMaxDays : config.queryPolicy.summaryMaxDays;
-  if (dayCount > maxDays) {
+  if (detail && normalizedIntent.fidelity === "prefer_exact") {
     throw createDomainError(
-      "HIGH_CARDINALITY_RANGE_UNSAFE",
-      `Requested range exceeds safe live API limits (${maxDays} days).`,
+      "NOT_IMPLEMENTED",
+      "fidelity=prefer_exact is not supported for page/query detail queries in live API mode.",
     );
   }
 
-  if (
-    detail &&
-    normalizedIntent.fidelity === "prefer_exact" &&
-    config.queryPolicy.blockExactWithPageOrQueryWithoutBulkExport &&
-    normalizedIntent.sourcePreference !== "bulk_export" &&
-    normalizedIntent.sourcePreference !== "mirror" &&
-    dayCount > config.queryPolicy.detailSplitDailyAfterDays
-  ) {
+  if (detail && dayCount > config.queryPolicy.detailMaxDays) {
     throw createDomainError(
       "HIGH_CARDINALITY_RANGE_UNSAFE",
-      "Exact long-range page/query detail requires a mirror or bulk export source.",
+      `Requested detail range exceeds safe live API limits (${config.queryPolicy.detailMaxDays} days).`,
     );
   }
 
@@ -161,7 +167,29 @@ export function createPerformanceQueryPlan(args: {
     startRow = cursor.startRow;
   }
 
-  const splitApplied = detail && dayCount > config.queryPolicy.detailSplitDailyAfterDays;
+  const splitStrategy: SplitStrategy = detail
+    ? dayCount > config.queryPolicy.detailSplitDailyAfterDays
+      ? "detail_daily"
+      : "none"
+    : dayCount > config.queryPolicy.summaryMaxDays
+      ? "summary_chunked"
+      : "none";
+  const splitApplied = splitStrategy !== "none";
+  const dateRanges =
+    splitStrategy === "detail_daily"
+      ? enumeratePtDates(normalizedIntent.startDate, normalizedIntent.endDate).map((date) => ({
+          startDate: date,
+          endDate: date,
+        }))
+      : splitStrategy === "summary_chunked"
+        ? chunkDateRanges(normalizedIntent.startDate, normalizedIntent.endDate, config.queryPolicy.summaryMaxDays)
+        : [
+            {
+              startDate: normalizedIntent.startDate,
+              endDate: normalizedIntent.endDate,
+            },
+          ];
+
   return {
     property,
     normalizedIntent,
@@ -171,17 +199,8 @@ export function createPerformanceQueryPlan(args: {
     startRow,
     pageSize: normalizedIntent.pageSize,
     splitApplied,
-    dateRanges: splitApplied
-      ? enumeratePtDates(normalizedIntent.startDate, normalizedIntent.endDate).map((date) => ({
-          startDate: date,
-          endDate: date,
-        }))
-      : [
-          {
-            startDate: normalizedIntent.startDate,
-            endDate: normalizedIntent.endDate,
-          },
-        ],
+    splitStrategy,
+    dateRanges,
     isDetail: detail,
     costClass: classifyCost(detail, dayCount),
     predictedReasons: predictReasons(normalizedIntent, detail),
@@ -229,6 +248,7 @@ export function buildMetadata(args: {
     firstIncompleteHour: args.firstIncompleteHour,
     costClass: args.plan.costClass,
     splitApplied: args.plan.splitApplied,
+    splitStrategy: args.plan.splitStrategy,
   };
 }
 

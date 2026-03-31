@@ -6,6 +6,8 @@ import YAML from "yaml";
 import { createDomainError } from "../domain/errors.js";
 import type { AppConfig, EnvConfig } from "../domain/types.js";
 import { expandHome } from "../utils/paths.js";
+import { resolvePropertyConfig } from "../utils/site-url.js";
+import { validateToolPolicy } from "../domain/tool-policy.js";
 import { appConfigSchema, envSchema } from "./schema.js";
 
 export function loadEnv(env: NodeJS.ProcessEnv, cwd = process.cwd()): EnvConfig {
@@ -45,12 +47,24 @@ export async function loadConfig(configPath: string): Promise<AppConfig> {
   }
 
   const aliases = new Set<string>();
+  const canonicalSites = new Set<string>();
   for (const property of parsed.data.properties) {
     if (aliases.has(property.alias)) {
       throw createDomainError("CONFIG_ERROR", `Duplicate property alias: ${property.alias}`);
     }
     aliases.add(property.alias);
+    const resolved = resolvePropertyConfig(property);
+    if (canonicalSites.has(resolved.canonicalSiteUrl)) {
+      throw createDomainError("CONFIG_ERROR", `Duplicate canonical siteUrl is not supported: ${resolved.canonicalSiteUrl}`);
+    }
+    canonicalSites.add(resolved.canonicalSiteUrl);
   }
+
+  if (parsed.data.queryPolicy.detailSplitDailyAfterDays > parsed.data.queryPolicy.detailMaxDays) {
+    throw createDomainError("CONFIG_ERROR", "detailSplitDailyAfterDays cannot exceed detailMaxDays.");
+  }
+
+  validateToolPolicy(parsed.data.toolPolicy);
 
   return parsed.data;
 }
