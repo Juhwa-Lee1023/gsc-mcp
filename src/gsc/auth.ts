@@ -212,11 +212,17 @@ async function startLoopbackServer(state: string, timeoutMs: number): Promise<{
   });
 
   return new Promise((resolve, reject) => {
-    server.once("error", reject);
+    server.once("error", (error) => {
+      finishReject(error);
+      reject(error);
+    });
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       if (!address || typeof address === "string") {
-        reject(new Error("Failed to bind loopback server"));
+        const bindError = new Error("Failed to bind loopback server");
+        finishReject(bindError);
+        server.close();
+        reject(bindError);
         return;
       }
       resolve({

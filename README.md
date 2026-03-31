@@ -201,4 +201,4 @@ The expected next step is to add a second transport entrypoint that reuses the e
 
 The server keeps stdout protocol-clean for MCP. Human-readable diagnostics go to stderr, and audit logging is redacted before it touches disk.
 
-The repository is currently published as a beta codebase. See [LICENSE](/Users/juhwalee/Documents/GitHub/gsc-mcp/LICENSE) for usage terms.
+The repository is currently published as a beta codebase. See [LICENSE](./LICENSE) for usage terms.

@@ -35,8 +35,6 @@ describe("cli auth", () => {
       cwd,
       env: {
         ...process.env,
-        GOOGLE_CLIENT_ID: "test-client-id",
-        GOOGLE_CLIENT_SECRET: "test-client-secret",
         GSC_MCP_DATA_DIR: cwd,
       },
     });
@@ -59,8 +57,6 @@ describe("cli auth", () => {
       cwd,
       env: {
         ...process.env,
-        GOOGLE_CLIENT_ID: "test-client-id",
-        GOOGLE_CLIENT_SECRET: "test-client-secret",
         GSC_MCP_DATA_DIR: cwd,
       },
     });
@@ -79,8 +75,6 @@ describe("cli auth", () => {
       cwd,
       env: {
         ...process.env,
-        GOOGLE_CLIENT_ID: "test-client-id",
-        GOOGLE_CLIENT_SECRET: "test-client-secret",
         GSC_MCP_DATA_DIR: cwd,
       },
     });

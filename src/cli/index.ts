@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { Command, Option } from "commander";
 
-import { createAuthContext, createConfigContext, createRuntimeContext } from "../app.js";
+import { createAuthContext, createAuthStateContext, createConfigContext, createRuntimeContext } from "../app.js";
 import {
   parsePerformanceQueryInput,
   parseSearchAppearanceQueryInput,
@@ -121,7 +121,7 @@ async function runAuthFlow(options: {
 }
 
 async function runAuthLogout(): Promise<void> {
-  const context = await createAuthContext();
+  const context = await createAuthStateContext();
   const startedAt = Date.now();
 
   try {
@@ -259,7 +259,7 @@ auth
 auth
   .command("status")
   .action(async () => {
-    const context = await createAuthContext();
+    const context = await createAuthStateContext();
     const token = await context.tokenStore.get();
     process.stdout.write(
       `${jsonText({

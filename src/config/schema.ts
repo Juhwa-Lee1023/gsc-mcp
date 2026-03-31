@@ -13,6 +13,12 @@ export const envSchema = z.object({
   GSC_MCP_FILE_TOKEN_SECRET: z.string().optional(),
 });
 
+export const localStateEnvSchema = z.object({
+  GSC_MCP_DATA_DIR: z.string().default(".gsc-mcp"),
+  GSC_MCP_DEBUG: z.string().optional().transform((value) => value === "true"),
+  GSC_MCP_FILE_TOKEN_SECRET: z.string().optional(),
+});
+
 export const appConfigSchema = z.object({
   google: z.object({
     defaultScope: z.enum(["readonly", "write"]).default("readonly"),
