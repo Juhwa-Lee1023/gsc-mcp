@@ -1,10 +1,13 @@
 {
   "name": "gsc-mcp",
   "version": "0.1.0",
-  "description": "A narrow, read-only Google Search Console inspector MCP server and CLI.",
+  "description": "A narrow, read-only Google Search Console CLI/MCP inspector package for solo developers.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Juhwa-Lee1023/gsc-mcp.git"
@@ -15,10 +18,12 @@
   "homepage": "https://github.com/Juhwa-Lee1023/gsc-mcp#readme",
   "keywords": [
     "mcp",
+    "mcp-server",
     "google-search-console",
     "search-console",
     "read-only",
     "inspector",
+    "solo-developer",
     "cli",
     "typescript"
   ],
@@ -40,7 +45,10 @@
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "clean": "rm -rf dist .tmp coverage",
     "dev": "tsx src/cli/index.ts",
+    "pack:check": "node scripts/check-package.mjs",
     "prepack": "pnpm build",
+    "release:check": "pnpm check && pnpm runtime:smoke && pnpm pack:check",
+    "runtime:smoke": "node scripts/runtime-smoke.mjs",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",

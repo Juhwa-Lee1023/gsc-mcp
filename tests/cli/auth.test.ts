@@ -5,16 +5,29 @@ import { mkdtemp } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const cliEntry = path.join(repoRoot, "src/cli/index.ts");
+const tsxBin = path.join(repoRoot, "node_modules/.bin/tsx");
+
+let buildPromise;
+
+async function ensureBuiltCli() {
+  buildPromise ??= execFileAsync("pnpm", ["build"], {
+    cwd: repoRoot,
+    env: process.env,
+  });
+  await buildPromise;
+}
 
 describe("cli auth", () => {
-  it("rejects unsupported scope values before starting auth", async () => {
-    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const cliEntry = path.join(repoRoot, "src/cli/index.ts");
-    const tsxBin = path.join(repoRoot, "node_modules/.bin/tsx");
+  beforeAll(async () => {
+    await ensureBuiltCli();
+  });
 
+  it("rejects unsupported scope values before starting auth", async () => {
     await expect(
       execFileAsync(tsxBin, [cliEntry, "auth", "login", "--scope", "nope"], {
         cwd: repoRoot,
@@ -27,9 +40,6 @@ describe("cli auth", () => {
 
   it("reports auth status with env only and no app config", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "gsc-mcp-auth-status-"));
-    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const cliEntry = path.join(repoRoot, "src/cli/index.ts");
-    const tsxBin = path.join(repoRoot, "node_modules/.bin/tsx");
 
     const result = await execFileAsync(tsxBin, [cliEntry, "auth", "status"], {
       cwd,
@@ -46,12 +56,6 @@ describe("cli auth", () => {
 
   it("works from the built CLI artifact for auth status", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "gsc-mcp-auth-dist-"));
-    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-
-    await execFileAsync("pnpm", ["build"], {
-      cwd: repoRoot,
-      env: process.env,
-    });
 
     const result = await execFileAsync("node", [path.join(repoRoot, "dist/index.js"), "auth", "status"], {
       cwd,
@@ -65,11 +69,19 @@ describe("cli auth", () => {
     expect(parsed.linked).toBe(false);
   });
 
+  it("prints help from the built CLI artifact", async () => {
+    const result = await execFileAsync("node", [path.join(repoRoot, "dist/index.js"), "--help"], {
+      cwd: repoRoot,
+      env: process.env,
+    });
+
+    expect(result.stdout).toContain("Search Console inspector");
+    expect(result.stdout).toContain("serve");
+    expect(result.stdout).toContain("auth");
+  });
+
   it("logs out with env only and no app config", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "gsc-mcp-auth-logout-"));
-    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const cliEntry = path.join(repoRoot, "src/cli/index.ts");
-    const tsxBin = path.join(repoRoot, "node_modules/.bin/tsx");
 
     const result = await execFileAsync(tsxBin, [cliEntry, "auth", "logout"], {
       cwd,

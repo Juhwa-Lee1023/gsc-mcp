@@ -4,6 +4,7 @@
 It focuses on reliable property access, honest Search Console analytics, and a small tool surface that is easy to reason about for solo developers and local agent workflows.
 
 This beta is intentionally not a broad Search Console management suite. It is best treated as a Search Console copilot for inspection, debugging, and careful reporting.
+This package is meant to be run as a CLI or stdio MCP tool package, not consumed as a supported importable library API.
 
 ## v1 Beta Scope
 
@@ -110,6 +111,26 @@ pnpm build
 pnpm start -- doctor
 ```
 
+## Build And Package
+
+Release-oriented verification:
+
+```bash
+pnpm release:check
+```
+
+The repository tracks a `pnpm` build-script allowlist in `pnpm-workspace.yaml` so `pnpm install --frozen-lockfile` can build the native cache dependency it actually needs for runtime commands.
+`pnpm release:check` also includes a built CLI runtime smoke that initializes the cache-backed service path and expects a graceful `GOOGLE_ACCOUNT_NOT_LINKED` error before any live API call.
+
+Create a tarball for publishing or inspection:
+
+```bash
+mkdir -p .tmp/pkg
+pnpm pack --pack-destination .tmp/pkg
+```
+
+This beta package should only contain the built CLI, README, LICENSE, and example config/env files.
+
 ## CLI
 
 - `gsc-mcp init` creates starter `.env` and `gsc-mcp.config.yaml` files if they are missing.
@@ -181,10 +202,15 @@ Important caveats:
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
+pnpm runtime:smoke
+pnpm pack:check
+pnpm release:check
 pnpm test
 pnpm typecheck
 pnpm build
 ```
+
+For release workflow details, see [RELEASING.md](./RELEASING.md).
 
 ## Deferred For v1
 
