@@ -8,7 +8,7 @@ import type { AppConfig, EnvConfig } from "../domain/types.js";
 import { expandHome } from "../utils/paths.js";
 import { resolvePropertyConfig } from "../utils/site-url.js";
 import { validateToolPolicy } from "../domain/tool-policy.js";
-import { appConfigSchema, envSchema } from "./schema.js";
+import { appConfigSchema, envSchema, localStateEnvSchema } from "./schema.js";
 
 export function loadEnv(env: NodeJS.ProcessEnv, cwd = process.cwd()): EnvConfig {
   const parsed = envSchema.safeParse(env);
@@ -26,6 +26,21 @@ export function loadEnv(env: NodeJS.ProcessEnv, cwd = process.cwd()): EnvConfig 
     cacheDbPath: parsed.data.GSC_MCP_CACHE_DB
       ? path.resolve(cwd, expandHome(parsed.data.GSC_MCP_CACHE_DB))
       : undefined,
+    debug: parsed.data.GSC_MCP_DEBUG ?? false,
+    fileTokenSecret: parsed.data.GSC_MCP_FILE_TOKEN_SECRET,
+  };
+}
+
+export function loadLocalStateEnv(env: NodeJS.ProcessEnv, cwd = process.cwd()): Pick<EnvConfig, "dataDir" | "debug" | "fileTokenSecret"> {
+  const parsed = localStateEnvSchema.safeParse(env);
+  if (!parsed.success) {
+    throw createDomainError("CONFIG_ERROR", "Invalid local state environment configuration.", false, {
+      issues: parsed.error.flatten(),
+    });
+  }
+
+  return {
+    dataDir: path.resolve(cwd, expandHome(parsed.data.GSC_MCP_DATA_DIR)),
     debug: parsed.data.GSC_MCP_DEBUG ?? false,
     fileTokenSecret: parsed.data.GSC_MCP_FILE_TOKEN_SECRET,
   };

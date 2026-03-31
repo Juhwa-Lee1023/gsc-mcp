@@ -1,7 +1,9 @@
 dist
 node_modules
+.pnpm-store
 .tmp
 .env
 .DS_Store
 coverage
 .gsc-mcp
+pnpm-debug.log*

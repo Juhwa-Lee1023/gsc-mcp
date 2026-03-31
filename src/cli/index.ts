@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { Command, Option } from "commander";
 
-import { createAuthContext, createConfigContext, createRuntimeContext } from "../app.js";
+import { createAuthContext, createAuthStateContext, createConfigContext, createRuntimeContext } from "../app.js";
 import {
   parsePerformanceQueryInput,
   parseSearchAppearanceQueryInput,
@@ -73,7 +73,13 @@ async function runAuthFlow(options: {
   const startedAt = Date.now();
 
   try {
-    const token = await loginWithLoopback(context.env, context.tokenStore, options.requestedScope);
+    const token = await loginWithLoopback(context.env, context.tokenStore, options.requestedScope, {
+      onManualAuthorizationUrl(authUrl, details) {
+        process.stderr.write(
+          `Browser auto-open failed (${details.browserError}). Open this URL manually to continue:\n${authUrl}\n`,
+        );
+      },
+    });
     const details = {
       requestedScope: options.requestedScope,
       scopeMode: token.scopeMode,
@@ -107,6 +113,45 @@ async function runAuthFlow(options: {
     await safeWriteAuditEvent(context.audit, context.logger, {
       timestamp: new Date().toISOString(),
       action: options.action,
+      outcome: "failure",
+      details,
+    });
+    throw error;
+  }
+}
+
+async function runAuthLogout(): Promise<void> {
+  const context = await createAuthStateContext();
+  const startedAt = Date.now();
+
+  try {
+    const hadToken = Boolean(await context.tokenStore.get());
+    await context.tokenStore.delete();
+    const details = {
+      tokenStore: context.tokenStore.kind,
+      hadToken,
+      latencyMs: Date.now() - startedAt,
+    };
+    context.logger.info("Auth logout completed", details);
+    await safeWriteAuditEvent(context.audit, context.logger, {
+      timestamp: new Date().toISOString(),
+      action: "auth.logout",
+      outcome: "success",
+      details,
+    });
+    process.stdout.write(`${jsonText({ tokenStore: context.tokenStore.kind, linked: false, removed: hadToken })}\n`);
+  } catch (error) {
+    const domainError = toDomainError(error);
+    const details = {
+      tokenStore: context.tokenStore.kind,
+      latencyMs: Date.now() - startedAt,
+      errorCode: domainError.code,
+      retryable: domainError.retryable,
+    };
+    context.logger.warn("Auth logout failed", details);
+    await safeWriteAuditEvent(context.audit, context.logger, {
+      timestamp: new Date().toISOString(),
+      action: "auth.logout",
       outcome: "failure",
       details,
     });
@@ -214,7 +259,7 @@ auth
 auth
   .command("status")
   .action(async () => {
-    const context = await createAuthContext();
+    const context = await createAuthStateContext();
     const token = await context.tokenStore.get();
     process.stdout.write(
       `${jsonText({
@@ -224,6 +269,13 @@ auth
         updatedAt: token?.updatedAt ?? null,
       })}\n`,
     );
+  });
+
+auth
+  .command("logout")
+  .description("Delete the locally stored Google OAuth token.")
+  .action(async () => {
+    await runAuthLogout();
   });
 
 const configCmd = program.command("config").description("Inspect config.");

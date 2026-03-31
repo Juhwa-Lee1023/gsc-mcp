@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import { loadConfig, loadEnv } from "./config/load.js";
-import type { AuthContext, CacheStore, ConfigContext, RuntimeContext } from "./domain/types.js";
+import { loadConfig, loadEnv, loadLocalStateEnv } from "./config/load.js";
+import type { AuthContext, CacheStore, ConfigContext, EnvConfig, RuntimeContext } from "./domain/types.js";
 import { FileAuditSink } from "./security/audit.js";
 import { createLogger } from "./security/logger.js";
 import { loadOrCreateSecret } from "./security/local-secret.js";
@@ -28,7 +28,9 @@ const defaultAuthLogging = {
   redactQueryStrings: true,
 };
 
-async function createAuthArtifacts(env: import("./domain/types.js").EnvConfig, logging = defaultAuthLogging): Promise<AuthContext> {
+type LocalStateEnv = Pick<EnvConfig, "dataDir" | "debug" | "fileTokenSecret">;
+
+async function createLocalStateArtifacts(env: LocalStateEnv, logging = defaultAuthLogging) {
   await ensureDir(env.dataDir);
   return {
     env,
@@ -41,6 +43,14 @@ async function createAuthArtifacts(env: import("./domain/types.js").EnvConfig, l
   };
 }
 
+async function createAuthArtifacts(env: EnvConfig, logging = defaultAuthLogging): Promise<AuthContext> {
+  const artifacts = await createLocalStateArtifacts(env, logging);
+  return {
+    ...artifacts,
+    env,
+  };
+}
+
 export async function createAuthContext(options: {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -48,6 +58,15 @@ export async function createAuthContext(options: {
   const cwd = options.cwd ?? process.cwd();
   const env = loadEnv(options.env ?? process.env, cwd);
   return createAuthArtifacts(env);
+}
+
+export async function createAuthStateContext(options: {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}) {
+  const cwd = options.cwd ?? process.cwd();
+  const env = loadLocalStateEnv(options.env ?? process.env, cwd);
+  return createLocalStateArtifacts(env);
 }
 
 export async function createConfigContext(options: {

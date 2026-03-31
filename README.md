@@ -39,8 +39,8 @@ This first version ships:
 
 1. Install dependencies.
 2. Copy `.env.example` to `.env` and fill in OAuth values.
-3. Copy `gsc-mcp.config.example.yaml` to `gsc-mcp.config.yaml` and define allowed properties.
-4. Run `gsc-mcp auth login --scope readonly` to link the local account.
+3. Run `gsc-mcp auth login --scope readonly` to link the local account. Auth commands only require `.env`.
+4. Copy `gsc-mcp.config.example.yaml` to `gsc-mcp.config.yaml` and define allowed properties before using service or MCP commands.
 
 ```bash
 pnpm install
@@ -107,9 +107,10 @@ pnpm start -- doctor
 ## CLI
 
 - `gsc-mcp init` creates starter `.env` and `gsc-mcp.config.yaml` files if they are missing.
-- `gsc-mcp auth login --scope readonly|write` links a local Google OAuth token.
+- `gsc-mcp auth login --scope readonly|write` links a local Google OAuth token. If browser auto-open fails, the CLI prints the authorization URL for manual use.
 - `gsc-mcp auth upgrade --scope write` requests broader OAuth scope later, but it does not add write tools to the v1 server surface.
 - `gsc-mcp auth status` shows the current local token state.
+- `gsc-mcp auth logout` deletes the locally stored OAuth token.
 - `gsc-mcp config show` prints resolved config.
 - `gsc-mcp doctor` prints local diagnostics.
 - `gsc-mcp serve stdio` starts the MCP server.
@@ -170,6 +171,8 @@ Important caveats:
 ## Testing
 
 ```bash
+pnpm install --frozen-lockfile
+pnpm check
 pnpm test
 pnpm typecheck
 pnpm build
@@ -182,6 +185,7 @@ Intentionally deferred to later phases:
 - Streamable HTTP transport
 - write tools enabled by default
 - hosted auth portal
+- auth session management beyond local login/status/logout
 - bulk export or mirror-backed exact detail mode
 - generic indexing submission
 - GA4, Bing, and PageSpeed integration
@@ -196,3 +200,5 @@ The expected next step is to add a second transport entrypoint that reuses the e
 ## Notes
 
 The server keeps stdout protocol-clean for MCP. Human-readable diagnostics go to stderr, and audit logging is redacted before it touches disk.
+
+The repository is currently published as a beta codebase. See [LICENSE](./LICENSE) for usage terms.
