@@ -9,7 +9,7 @@ import { registerTools } from "./tools/index.js";
 export function createMcpServer(context: RuntimeContext): McpServer {
   const server = new McpServer({
     name: "gsc-mcp",
-    version: "0.1.0",
+    version: "0.1.0-beta.1",
   });
   registerTools(server, context);
   registerResources(server, context);

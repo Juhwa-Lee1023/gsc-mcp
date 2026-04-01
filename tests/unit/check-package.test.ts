@@ -10,7 +10,7 @@ describe("package check parser", () => {
       JSON.stringify([
         {
           name: "gsc-mcp",
-          version: "0.1.0",
+          version: "0.1.0-beta.1",
           entryCount: 1,
           files: [{ path: "dist/index.js" }],
         },
@@ -20,7 +20,7 @@ describe("package check parser", () => {
     expect(parsePackOutput(raw)).toEqual([
       {
         name: "gsc-mcp",
-        version: "0.1.0",
+        version: "0.1.0-beta.1",
         entryCount: 1,
         files: [{ path: "dist/index.js" }],
       },
