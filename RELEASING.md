@@ -42,6 +42,16 @@ Expected result:
 - one `.tgz` package under `.tmp/pkg`
 - package contents limited to the built CLI, README, LICENSE, and example config/env files
 
+## Publish The Public Beta
+
+After the verification and publication prerequisites above are satisfied:
+
+```bash
+pnpm publish --tag beta --access public
+```
+
+Use the `beta` dist-tag for the first public beta release line, including `0.1.0-beta.1`.
+
 ## Manual Smoke Suggestions
 
 Run these after building:

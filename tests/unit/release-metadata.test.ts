@@ -10,6 +10,7 @@ describe("release metadata", () => {
   it("declares package metadata needed for a public beta repo", async () => {
     const packageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
 
+    expect(packageJson.version).toBe("0.1.0-beta.1");
     expect(packageJson.license).toBe("MIT");
     expect(packageJson.description).toContain("read-only");
     expect(packageJson.description).toContain("CLI/MCP");
@@ -68,6 +69,8 @@ describe("release metadata", () => {
     expect(workflow).toContain("pnpm pack:check");
     expect(releasing).toContain("pnpm release:check");
     expect(releasing).toContain("pnpm runtime:smoke");
+    expect(releasing).toContain("pnpm publish --tag beta --access public");
+    expect(releasing).toContain("0.1.0-beta.1");
     expect(releasing).toContain("not a generic importable library");
     expect(releasing).toContain("package license still grants public use and redistribution rights");
     expect(releasing).toContain("repository, homepage, and issue tracker URLs");

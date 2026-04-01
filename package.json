@@ -1,6 +1,6 @@
 {
   "name": "gsc-mcp",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "description": "A narrow, read-only Google Search Console CLI/MCP inspector package for solo developers.",
   "license": "MIT",
   "type": "module",

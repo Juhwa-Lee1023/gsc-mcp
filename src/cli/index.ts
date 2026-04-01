@@ -217,7 +217,7 @@ const program = new Command();
 program
   .name("gsc-mcp")
   .description("A narrow, read-only Search Console inspector MCP server and CLI.")
-  .version("0.1.0");
+  .version("0.1.0-beta.1");
 
 program
   .command("init")
