@@ -11,6 +11,7 @@ It is not published as a supported application library API.
 4. Run the full release verification.
 5. Create a package tarball and inspect the output path.
 6. Publish only after the README, examples, and capabilities still match the shipped surface.
+7. If publishing as a public beta, make sure the repository, homepage, and issue tracker URLs in `package.json` resolve publicly for end users.
 
 ## Verification Commands
 
@@ -59,3 +60,8 @@ Before publishing, confirm the package still presents itself as:
 - a Search Console inspector/debugger/copilot
 - not a broad management suite
 - not a generic importable library
+
+Also confirm these publication prerequisites:
+
+- the package license still grants public use and redistribution rights
+- the repository, homepage, and issue tracker URLs in `package.json` are public and resolve for end users if this is being published as a public beta

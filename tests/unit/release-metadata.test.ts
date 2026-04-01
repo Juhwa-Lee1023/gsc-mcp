@@ -10,7 +10,7 @@ describe("release metadata", () => {
   it("declares package metadata needed for a public beta repo", async () => {
     const packageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
 
-    expect(packageJson.license).toBe("SEE LICENSE IN LICENSE");
+    expect(packageJson.license).toBe("MIT");
     expect(packageJson.description).toContain("read-only");
     expect(packageJson.description).toContain("CLI/MCP");
     expect(packageJson.description).toContain("inspector");
@@ -38,6 +38,14 @@ describe("release metadata", () => {
     await expect(access(path.join(repoRoot, "scripts", "runtime-smoke.mjs"))).resolves.toBeUndefined();
   });
 
+  it("uses a public-package license text instead of a private evaluation-only notice", async () => {
+    const license = await readFile(path.join(repoRoot, "LICENSE"), "utf8");
+
+    expect(license).toContain("MIT License");
+    expect(license).toContain("Permission is hereby granted");
+    expect(license).not.toContain("No license is granted");
+  });
+
   it("keeps release docs and CI aligned with the narrowed beta surface", async () => {
     const readme = await readFile(path.join(repoRoot, "README.md"), "utf8");
     const workflow = await readFile(path.join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
@@ -61,6 +69,8 @@ describe("release metadata", () => {
     expect(releasing).toContain("pnpm release:check");
     expect(releasing).toContain("pnpm runtime:smoke");
     expect(releasing).toContain("not a generic importable library");
+    expect(releasing).toContain("package license still grants public use and redistribution rights");
+    expect(releasing).toContain("repository, homepage, and issue tracker URLs");
     expect(workspace).toContain("better-sqlite3");
     expect(workspace).toContain("esbuild");
   });
