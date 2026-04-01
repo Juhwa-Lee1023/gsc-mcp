@@ -70,6 +70,34 @@ export const sitemapGetInputShape = {
 
 export const sitemapGetInputSchema = z.object(sitemapGetInputShape).strict();
 
+export const siteAddInputShape = {
+  siteUrl: z.string().min(1),
+} as const;
+
+export const siteAddInputSchema = z.object(siteAddInputShape).strict();
+
+export const siteDeleteInputShape = {
+  site: z.string().min(1),
+  confirm: z.boolean().optional().default(false),
+} as const;
+
+export const siteDeleteInputSchema = z.object(siteDeleteInputShape).strict();
+
+export const sitemapSubmitInputShape = {
+  site: z.string().min(1),
+  feedpath: z.string().min(1),
+} as const;
+
+export const sitemapSubmitInputSchema = z.object(sitemapSubmitInputShape).strict();
+
+export const sitemapDeleteInputShape = {
+  site: z.string().min(1),
+  feedpath: z.string().min(1),
+  confirm: z.boolean().optional().default(false),
+} as const;
+
+export const sitemapDeleteInputSchema = z.object(sitemapDeleteInputShape).strict();
+
 export const urlInspectionInputShape = {
   site: z.string().min(1),
   url: z.string().url(),
@@ -92,6 +120,22 @@ export function parseSiteSelectorInput(input: unknown) {
 
 export function parseSitemapGetInput(input: unknown) {
   return parseWithDomainError(sitemapGetInputSchema, input, "Invalid sitemap lookup input.");
+}
+
+export function parseSiteAddInput(input: unknown) {
+  return parseWithDomainError(siteAddInputSchema, input, "Invalid site add input.");
+}
+
+export function parseSiteDeleteInput(input: unknown) {
+  return parseWithDomainError(siteDeleteInputSchema, input, "Invalid site delete input.");
+}
+
+export function parseSitemapSubmitInput(input: unknown) {
+  return parseWithDomainError(sitemapSubmitInputSchema, input, "Invalid sitemap submit input.");
+}
+
+export function parseSitemapDeleteInput(input: unknown) {
+  return parseWithDomainError(sitemapDeleteInputSchema, input, "Invalid sitemap delete input.");
 }
 
 export function parseUrlInspectionInput(input: unknown) {

@@ -106,6 +106,37 @@ describe("cli runtime behavior", () => {
       stderr: expect.stringContaining("\"code\": \"INVALID_ARGUMENT\""),
     });
   });
+
+  it("blocks write commands on the CLI before auth when write policy is still disabled", async () => {
+    const cwd = await makeTempProject();
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const cliEntry = path.join(repoRoot, "src/cli/index.ts");
+    const tsxBin = path.join(repoRoot, "node_modules/.bin/tsx");
+
+    await expect(
+      execFileAsync(
+        tsxBin,
+        [
+          cliEntry,
+          "sites",
+          "add",
+          "--site-url",
+          "sc-domain:example.com",
+        ],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            GOOGLE_CLIENT_ID: "test-client-id",
+            GOOGLE_CLIENT_SECRET: "test-client-secret",
+            GSC_MCP_DATA_DIR: cwd,
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("\"code\": \"WRITE_TOOL_DISABLED\""),
+    });
+  });
 });
 
 async function makeTempProject(options: {

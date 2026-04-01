@@ -10,6 +10,16 @@ export const READ_ONLY_TOOLS = [
   "gsc.sitemaps.get",
 ] as const;
 
+export const WRITE_TOOLS = [
+  "gsc.sites.add",
+  "gsc.sites.delete",
+  "gsc.sitemaps.submit",
+  "gsc.sitemaps.delete",
+] as const;
+
+export const IMPLEMENTED_TOOLS = [...READ_ONLY_TOOLS, ...WRITE_TOOLS] as const;
+export const DESTRUCTIVE_WRITE_TOOLS = ["gsc.sites.delete", "gsc.sitemaps.delete"] as const;
+
 export const SEARCH_TYPES = ["web", "image", "video", "news", "discover", "googleNews"] as const;
 export const PERFORMANCE_DIMENSIONS = ["country", "date", "device", "hour", "page", "query", "searchAppearance"] as const;
 export const AGGREGATION_TYPES = ["auto", "byPage", "byProperty"] as const;
@@ -17,7 +27,10 @@ export const DATA_STATES = ["final", "all", "hourly_all"] as const;
 export const FIDELITY_MODES = ["best_effort", "prefer_exact"] as const;
 export const SOURCE_PREFERENCES = ["auto", "live_api"] as const;
 
-export type ToolName = (typeof READ_ONLY_TOOLS)[number];
+export type ReadOnlyToolName = (typeof READ_ONLY_TOOLS)[number];
+export type WriteToolName = (typeof WRITE_TOOLS)[number];
+export type ToolName = (typeof IMPLEMENTED_TOOLS)[number];
+export type DestructiveWriteToolName = (typeof DESTRUCTIVE_WRITE_TOOLS)[number];
 export type ScopeMode = "readonly" | "write";
 export type SearchType = (typeof SEARCH_TYPES)[number];
 export type PerformanceDimension = (typeof PERFORMANCE_DIMENSIONS)[number];
@@ -57,6 +70,16 @@ export interface ToolPolicy {
   disabledTools: ToolName[];
 }
 
+export interface WritePolicy {
+  enabled: boolean;
+  allowedTools: WriteToolName[];
+  requireConfirmationForDestructive: boolean;
+  siteAddAllowlist: string[];
+  siteAddAllowPatterns: string[];
+  siteDeleteAllowlist: string[];
+  siteDeleteAllowPatterns: string[];
+}
+
 export interface QueryPolicy {
   defaultDataState: DataState;
   summaryMaxDays: number;
@@ -85,6 +108,7 @@ export interface AppConfig {
   };
   properties: PropertyConfig[];
   toolPolicy: ToolPolicy;
+  writePolicy: WritePolicy;
   queryPolicy: QueryPolicy;
   cache: CacheConfig;
   logging: LoggingConfig;
@@ -275,9 +299,34 @@ export interface UrlInspectionResult {
   raw: Record<string, unknown>;
 }
 
+export interface SiteMutationResult {
+  siteUrl: string;
+  canonicalSiteUrl: string;
+  propertyType: PropertyType;
+  runtimeAlias: string | null;
+  metadata: {
+    allowlistedInRuntimeConfig: boolean;
+    ownershipVerificationMayBeRequired?: boolean;
+    confirmed?: boolean;
+  };
+  warnings: string[];
+}
+
+export interface SitemapMutationResult {
+  property: string;
+  canonicalSiteUrl: string;
+  feedpath: string;
+  normalizedFeedpath: string;
+  metadata: {
+    confirmed?: boolean;
+  };
+}
+
 export interface GscClient {
   listSites(): Promise<GscSitesListResponse>;
   getSite(siteUrl: string): Promise<GscSiteEntry>;
+  addSite(siteUrl: string): Promise<void>;
+  deleteSite(siteUrl: string): Promise<void>;
   querySearchAnalytics(siteUrl: string, request: {
     startDate: string;
     endDate: string;
@@ -292,6 +341,8 @@ export interface GscClient {
   inspectUrl(siteUrl: string, inspectionUrl: string): Promise<Record<string, unknown>>;
   listSitemaps(siteUrl: string): Promise<SitemapRecord[]>;
   getSitemap(siteUrl: string, feedpath: string): Promise<SitemapRecord>;
+  submitSitemap(siteUrl: string, feedpath: string): Promise<void>;
+  deleteSitemap(siteUrl: string, feedpath: string): Promise<void>;
 }
 
 export interface SiteRecord {

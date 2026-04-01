@@ -17,6 +17,53 @@ toolPolicy:
     - gsc.sitemaps.get
   disabledTools: []
 
+writePolicy:
+  enabled: false
+  allowedTools: []
+  requireConfirmationForDestructive: true
+  siteAddAllowlist: []
+  siteAddAllowPatterns: []
+  siteDeleteAllowlist: []
+  siteDeleteAllowPatterns: []
+
+# To opt into the official Search Console API write surface:
+# 1. Run `gsc-mcp auth upgrade --scope write`
+# 2. Add only the specific write tools you want to `toolPolicy.enabledTools`
+# 3. Set `writePolicy.enabled: true`
+# 4. Fill the relevant allowlists/patterns before running write commands
+#
+# Example:
+# toolPolicy:
+#   enabledTools:
+#     - gsc.sites.list
+#     - gsc.sites.get
+#     - gsc.performance.query
+#     - gsc.performance.search_appearance.list
+#     - gsc.url.inspect
+#     - gsc.sitemaps.list
+#     - gsc.sitemaps.get
+#     - gsc.sites.add
+#     - gsc.sites.delete
+#     - gsc.sitemaps.submit
+#     - gsc.sitemaps.delete
+#   disabledTools: []
+#
+# writePolicy:
+#   enabled: true
+#   allowedTools:
+#     - gsc.sites.add
+#     - gsc.sites.delete
+#     - gsc.sitemaps.submit
+#     - gsc.sitemaps.delete
+#   requireConfirmationForDestructive: true
+#   siteAddAllowlist:
+#     - sc-domain:example.com
+#   siteAddAllowPatterns:
+#     - https://example.com/*
+#   siteDeleteAllowlist:
+#     - sc-domain:example.com
+#   siteDeleteAllowPatterns: []
+
 queryPolicy:
   defaultDataState: final
   summaryMaxDays: 90

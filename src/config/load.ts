@@ -6,8 +6,8 @@ import YAML from "yaml";
 import { createDomainError } from "../domain/errors.js";
 import type { AppConfig, EnvConfig } from "../domain/types.js";
 import { expandHome } from "../utils/paths.js";
-import { resolvePropertyConfig } from "../utils/site-url.js";
-import { validateToolPolicy } from "../domain/tool-policy.js";
+import { normalizeSiteUrl, resolvePropertyConfig } from "../utils/site-url.js";
+import { validateToolPolicy, validateWritePolicy } from "../domain/tool-policy.js";
 import { appConfigSchema, envSchema, localStateEnvSchema } from "./schema.js";
 
 export function loadEnv(env: NodeJS.ProcessEnv, cwd = process.cwd()): EnvConfig {
@@ -61,9 +61,20 @@ export async function loadConfig(configPath: string): Promise<AppConfig> {
     });
   }
 
+  const normalizedConfig: AppConfig = {
+    ...parsed.data,
+    writePolicy: {
+      ...parsed.data.writePolicy,
+      siteAddAllowlist: parsed.data.writePolicy.siteAddAllowlist.map((siteUrl) => normalizeSiteUrl(siteUrl)),
+      siteAddAllowPatterns: parsed.data.writePolicy.siteAddAllowPatterns.map((pattern) => pattern.trim()),
+      siteDeleteAllowlist: parsed.data.writePolicy.siteDeleteAllowlist.map((siteUrl) => normalizeSiteUrl(siteUrl)),
+      siteDeleteAllowPatterns: parsed.data.writePolicy.siteDeleteAllowPatterns.map((pattern) => pattern.trim()),
+    },
+  };
+
   const aliases = new Set<string>();
   const canonicalSites = new Set<string>();
-  for (const property of parsed.data.properties) {
+  for (const property of normalizedConfig.properties) {
     if (aliases.has(property.alias)) {
       throw createDomainError("CONFIG_ERROR", `Duplicate property alias: ${property.alias}`);
     }
@@ -75,11 +86,12 @@ export async function loadConfig(configPath: string): Promise<AppConfig> {
     canonicalSites.add(resolved.canonicalSiteUrl);
   }
 
-  if (parsed.data.queryPolicy.detailSplitDailyAfterDays > parsed.data.queryPolicy.detailMaxDays) {
+  if (normalizedConfig.queryPolicy.detailSplitDailyAfterDays > normalizedConfig.queryPolicy.detailMaxDays) {
     throw createDomainError("CONFIG_ERROR", "detailSplitDailyAfterDays cannot exceed detailMaxDays.");
   }
 
-  validateToolPolicy(parsed.data.toolPolicy);
+  validateToolPolicy(normalizedConfig.toolPolicy);
+  validateWritePolicy(normalizedConfig);
 
-  return parsed.data;
+  return normalizedConfig;
 }

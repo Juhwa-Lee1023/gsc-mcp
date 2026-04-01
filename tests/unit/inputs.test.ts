@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { parsePerformanceQueryInput, parseUrlInspectionInput } from "../../src/domain/inputs.js";
+import {
+  parsePerformanceQueryInput,
+  parseSiteDeleteInput,
+  parseSitemapDeleteInput,
+  parseUrlInspectionInput,
+} from "../../src/domain/inputs.js";
 
 describe("shared input parsing", () => {
   it("rejects unsupported source preferences for v1", () => {
@@ -35,6 +40,28 @@ describe("shared input parsing", () => {
       site: "main",
       url: "https://example.com/page",
       forceRefresh: false,
+    });
+  });
+
+  it("defaults destructive confirmation flags to false in shared write parsers", () => {
+    expect(
+      parseSiteDeleteInput({
+        site: "main",
+      }),
+    ).toEqual({
+      site: "main",
+      confirm: false,
+    });
+
+    expect(
+      parseSitemapDeleteInput({
+        site: "main",
+        feedpath: "https://example.com/sitemap.xml",
+      }),
+    ).toEqual({
+      site: "main",
+      feedpath: "https://example.com/sitemap.xml",
+      confirm: false,
     });
   });
 });

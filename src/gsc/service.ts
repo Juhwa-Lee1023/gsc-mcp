@@ -6,6 +6,7 @@ import {
   MAX_PAGE_SIZE,
   mergeRows,
 } from "../domain/planner.js";
+import { assertToolAvailable } from "../domain/tool-policy.js";
 import type {
   AppConfig,
   AuditSink,
@@ -15,23 +16,36 @@ import type {
   PerformanceQueryIntent,
   PerformanceQueryResult,
   PerformanceRow,
+  ScopeMode,
   ResolvedProperty,
   SearchAnalyticsApiResponse,
   SiteRecord,
+  SiteMutationResult,
   SitemapRecord,
+  SitemapMutationResult,
   ToolName,
   UrlInspectionResult,
+  WriteToolName,
 } from "../domain/types.js";
 import {
   parsePerformanceQueryInput,
   parseSearchAppearanceQueryInput,
+  parseSiteAddInput,
+  parseSiteDeleteInput,
   parseSiteSelectorInput,
+  parseSitemapDeleteInput,
   parseSitemapGetInput,
+  parseSitemapSubmitInput,
   parseUrlInspectionInput,
 } from "../domain/inputs.js";
 import { safeWriteAuditEvent } from "../security/audit-utils.js";
 import { stableHash } from "../utils/crypto.js";
-import { assertUrlWithinProperty } from "../utils/site-url.js";
+import {
+  assertUrlWithinProperty,
+  findConfiguredProperty,
+  matchesSiteUrlPolicy,
+  normalizeSiteUrl,
+} from "../utils/site-url.js";
 
 function toRows(response: SearchAnalyticsApiResponse): PerformanceRow[] {
   return (response.rows ?? []).map((row) => ({
@@ -81,6 +95,10 @@ function normalizeSitemapFeedpath(feedpath: string): string {
   }
 }
 
+function propertyTypeFromSiteUrl(siteUrl: string): "domain" | "url-prefix" {
+  return siteUrl.startsWith("sc-domain:") ? "domain" : "url-prefix";
+}
+
 export class GscService {
   private static readonly maxRangePageRequests = 10;
   private static readonly rangePageSlack = 1;
@@ -88,6 +106,7 @@ export class GscService {
   constructor(
     private readonly config: AppConfig,
     private readonly client: GscClient,
+    private readonly scopeMode: ScopeMode,
     private readonly cache: CacheStore,
     private readonly cacheScope: string,
     private readonly cursorSecret: string,
@@ -146,6 +165,90 @@ export class GscService {
     }));
   }
 
+  async addSite(input: { siteUrl: string }): Promise<SiteMutationResult> {
+    const parsedInput = parseSiteAddInput(input);
+    return this.observe(
+      "gsc.sites.add",
+      parsedInput.siteUrl,
+      async () => {
+        this.assertWriteScope("gsc.sites.add");
+        const canonicalSiteUrl = normalizeSiteUrl(parsedInput.siteUrl);
+        this.assertSiteAddAllowed(canonicalSiteUrl);
+        await this.client.addSite(canonicalSiteUrl);
+        await this.invalidateScopedCache("sites", "list");
+
+        const configuredProperty = findConfiguredProperty(this.config, canonicalSiteUrl);
+        const warnings = [
+          canonicalSiteUrl.startsWith("sc-domain:")
+            ? "Property was added to Search Console, but domain-property ownership verification may still require DNS verification outside this package."
+            : "Property was added to Search Console, but ownership verification may still be required outside this package.",
+        ];
+        if (!configuredProperty) {
+          warnings.push("This property is not currently allowlisted in gsc-mcp config, so runtime read/write operations still require a config update.");
+        }
+
+        return {
+          siteUrl: parsedInput.siteUrl.trim(),
+          canonicalSiteUrl,
+          propertyType: propertyTypeFromSiteUrl(canonicalSiteUrl),
+          runtimeAlias: configuredProperty?.alias ?? null,
+          metadata: {
+            allowlistedInRuntimeConfig: Boolean(configuredProperty),
+            ownershipVerificationMayBeRequired: true,
+          },
+          warnings,
+        };
+      },
+      { requestedSiteUrl: parsedInput.siteUrl },
+      (result) => ({
+        siteAlias: result.runtimeAlias ?? result.canonicalSiteUrl,
+        canonicalSiteUrl: result.canonicalSiteUrl,
+        allowlistedInRuntimeConfig: result.metadata.allowlistedInRuntimeConfig,
+      }),
+    );
+  }
+
+  async deleteSite(input: { site: string; confirm?: boolean }): Promise<SiteMutationResult> {
+    const parsedInput = parseSiteDeleteInput(input);
+    return this.observe(
+      "gsc.sites.delete",
+      parsedInput.site,
+      async () => {
+        this.assertWriteScope("gsc.sites.delete");
+        this.assertConfirmation("gsc.sites.delete", parsedInput.confirm);
+
+        const configuredProperty = findConfiguredProperty(this.config, parsedInput.site);
+        const canonicalSiteUrl = configuredProperty?.canonicalSiteUrl ?? normalizeSiteUrl(parsedInput.site);
+        this.assertSiteDeleteAllowed(canonicalSiteUrl);
+
+        await this.client.deleteSite(canonicalSiteUrl);
+        await this.invalidateScopedCache("sites", "list");
+
+        const warnings = configuredProperty
+          ? ["The runtime config still includes this property alias. Remove or update the config if you no longer want it available in gsc-mcp."]
+          : [];
+
+        return {
+          siteUrl: configuredProperty?.siteUrl ?? parsedInput.site.trim(),
+          canonicalSiteUrl,
+          propertyType: propertyTypeFromSiteUrl(canonicalSiteUrl),
+          runtimeAlias: configuredProperty?.alias ?? null,
+          metadata: {
+            allowlistedInRuntimeConfig: Boolean(configuredProperty),
+            confirmed: true,
+          },
+          warnings,
+        };
+      },
+      { requestedSite: parsedInput.site, confirmed: parsedInput.confirm },
+      (result) => ({
+        siteAlias: result.runtimeAlias ?? result.canonicalSiteUrl,
+        canonicalSiteUrl: result.canonicalSiteUrl,
+        confirmed: result.metadata.confirmed,
+      }),
+    );
+  }
+
   async listSitemaps(selector: string): Promise<{ property: string; sitemaps: SitemapRecord[] }> {
     return this.observe("gsc.sitemaps.list", selector, async () => {
       const property = this.assertReadable(parseSiteSelectorInput({ site: selector }).site);
@@ -158,6 +261,33 @@ export class GscService {
       siteAlias: result.property,
       sitemapCount: result.sitemaps.length,
     }));
+  }
+
+  async submitSitemap(input: { site: string; feedpath: string }): Promise<SitemapMutationResult> {
+    const parsedInput = parseSitemapSubmitInput(input);
+    const normalizedFeedpath = normalizeSitemapFeedpath(parsedInput.feedpath);
+    return this.observe(
+      "gsc.sitemaps.submit",
+      parsedInput.site,
+      async () => {
+        this.assertWriteScope("gsc.sitemaps.submit");
+        const property = this.assertReadable(parsedInput.site);
+        await this.client.submitSitemap(property.canonicalSiteUrl, normalizedFeedpath);
+        await this.invalidateSitemapCaches(property.canonicalSiteUrl, normalizedFeedpath);
+        return {
+          property: property.alias,
+          canonicalSiteUrl: property.canonicalSiteUrl,
+          feedpath: parsedInput.feedpath,
+          normalizedFeedpath,
+          metadata: {},
+        };
+      },
+      { requestedFeedpath: parsedInput.feedpath },
+      (result) => ({
+        siteAlias: result.property,
+        normalizedFeedpath: result.normalizedFeedpath,
+      }),
+    );
   }
 
   async getSitemap(selector: string, feedpath: string): Promise<{ property: string; sitemap: SitemapRecord }> {
@@ -178,6 +308,37 @@ export class GscService {
     }, undefined, (result) => ({
       siteAlias: result.property,
     }));
+  }
+
+  async deleteSitemap(input: { site: string; feedpath: string; confirm?: boolean }): Promise<SitemapMutationResult> {
+    const parsedInput = parseSitemapDeleteInput(input);
+    const normalizedFeedpath = normalizeSitemapFeedpath(parsedInput.feedpath);
+    return this.observe(
+      "gsc.sitemaps.delete",
+      parsedInput.site,
+      async () => {
+        this.assertWriteScope("gsc.sitemaps.delete");
+        this.assertConfirmation("gsc.sitemaps.delete", parsedInput.confirm);
+        const property = this.assertReadable(parsedInput.site);
+        await this.client.deleteSitemap(property.canonicalSiteUrl, normalizedFeedpath);
+        await this.invalidateSitemapCaches(property.canonicalSiteUrl, normalizedFeedpath);
+        return {
+          property: property.alias,
+          canonicalSiteUrl: property.canonicalSiteUrl,
+          feedpath: parsedInput.feedpath,
+          normalizedFeedpath,
+          metadata: {
+            confirmed: true,
+          },
+        };
+      },
+      { requestedFeedpath: parsedInput.feedpath, confirmed: parsedInput.confirm },
+      (result) => ({
+        siteAlias: result.property,
+        normalizedFeedpath: result.normalizedFeedpath,
+        confirmed: result.metadata.confirmed,
+      }),
+    );
   }
 
   async inspectUrl(input: { site: string; url: string; forceRefresh?: boolean }): Promise<UrlInspectionResult> {
@@ -353,6 +514,60 @@ export class GscService {
     return property;
   }
 
+  private assertWriteScope(toolName: WriteToolName): void {
+    if (this.scopeMode !== "write") {
+      throw createDomainError(
+        "WRITE_SCOPE_REQUIRED",
+        `Tool ${toolName} requires Search Console read/write scope. Run \`gsc-mcp auth upgrade --scope write\` first.`,
+      );
+    }
+  }
+
+  private assertConfirmation(toolName: WriteToolName, confirmed: boolean): void {
+    if (this.config.writePolicy.requireConfirmationForDestructive && !confirmed) {
+      throw createDomainError(
+        "CONFIRMATION_REQUIRED",
+        `Tool ${toolName} requires explicit confirmation in this beta.`,
+        false,
+        { toolName },
+      );
+    }
+  }
+
+  private assertSiteAddAllowed(canonicalSiteUrl: string): void {
+    if (
+      !matchesSiteUrlPolicy(
+        canonicalSiteUrl,
+        this.config.writePolicy.siteAddAllowlist,
+        this.config.writePolicy.siteAddAllowPatterns,
+      )
+    ) {
+      throw createDomainError(
+        "SITE_ADD_NOT_ALLOWED",
+        "Adding this property is blocked by writePolicy.siteAddAllowlist/siteAddAllowPatterns.",
+        false,
+        { canonicalSiteUrl },
+      );
+    }
+  }
+
+  private assertSiteDeleteAllowed(canonicalSiteUrl: string): void {
+    if (
+      !matchesSiteUrlPolicy(
+        canonicalSiteUrl,
+        this.config.writePolicy.siteDeleteAllowlist,
+        this.config.writePolicy.siteDeleteAllowPatterns,
+      )
+    ) {
+      throw createDomainError(
+        "PROPERTY_NOT_ALLOWED_FOR_DELETE",
+        "Deleting this property is blocked by writePolicy.siteDeleteAllowlist/siteDeleteAllowPatterns.",
+        false,
+        { canonicalSiteUrl },
+      );
+    }
+  }
+
   private async fetchSplitResponses(
     canonicalSiteUrl: string,
     plan: Pick<import("../domain/types.js").PerformanceQueryPlan, "dateRanges" | "normalizedIntent" | "pageSize" | "startRow">,
@@ -441,6 +656,17 @@ export class GscService {
     };
   }
 
+  private async invalidateScopedCache(namespace: string, key: string): Promise<void> {
+    await this.cache.delete(namespace, `${this.cacheScope}:${key}`);
+  }
+
+  private async invalidateSitemapCaches(canonicalSiteUrl: string, normalizedFeedpath: string): Promise<void> {
+    await Promise.all([
+      this.invalidateScopedCache("sitemaps", canonicalSiteUrl),
+      this.invalidateScopedCache("sitemap", `${canonicalSiteUrl}:${normalizedFeedpath}`),
+    ]);
+  }
+
   private async observe<T>(
     toolName: ToolName,
     siteSelector: string | undefined,
@@ -450,6 +676,7 @@ export class GscService {
   ): Promise<T> {
     const startedAt = Date.now();
     try {
+      assertToolAvailable(this.config, toolName);
       const result = await callback();
       const summary = summarizeSuccess?.(result) ?? {};
       const siteAlias = typeof summary.siteAlias === "string" ? summary.siteAlias : siteSelector;

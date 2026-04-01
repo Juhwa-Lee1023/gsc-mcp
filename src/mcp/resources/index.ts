@@ -2,7 +2,7 @@ import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/serv
 
 import { toDomainError } from "../../domain/errors.js";
 import { buildCapabilitySurface } from "../../domain/surface.js";
-import { assertToolEnabled, isToolEnabled } from "../../domain/tool-policy.js";
+import { assertToolAvailable, isToolAvailable } from "../../domain/tool-policy.js";
 import type { RuntimeContext } from "../../domain/types.js";
 import { createAccountCacheScope, createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
@@ -15,6 +15,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient, context.logger),
+    tokenRecord.scopeMode,
     context.cache,
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
@@ -30,15 +31,14 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
     "gsc://capabilities",
     {
       title: "gsc-mcp beta capabilities",
-      description: "Capability matrix for the current read-only gsc-mcp beta surface.",
+      description: "Capability matrix for the current read-only-first gsc-mcp beta surface.",
       mimeType: "application/json",
     },
     async (uri) => {
-      const surface = buildCapabilitySurface(context.config.toolPolicy);
+      const surface = buildCapabilitySurface(context.config);
       return jsonResource(uri.toString(), {
         transport: "stdio",
         defaultScope: context.config.google.defaultScope,
-        readOnlyByDefault: true,
         ...surface,
       });
     },
@@ -49,12 +49,12 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
     "gsc://policies/current",
     {
       title: "Current policies",
-      description: "Sanitized current read-only property, tool, and query policies.",
+      description: "Sanitized current property, tool, write, and query policies.",
       mimeType: "application/json",
     },
     async (uri) =>
       jsonResource(uri.toString(), {
-        surface: buildCapabilitySurface(context.config.toolPolicy),
+        surface: buildCapabilitySurface(context.config),
         google: context.config.google,
         properties: context.properties.map((property) => ({
           alias: property.alias,
@@ -62,11 +62,12 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
           allowRead: property.allowRead,
         })),
         toolPolicy: context.config.toolPolicy,
+        writePolicy: context.config.writePolicy,
         queryPolicy: context.config.queryPolicy,
       }),
   );
 
-  if (isToolEnabled(context.config.toolPolicy, "gsc.sites.list")) {
+  if (isToolAvailable(context.config, "gsc.sites.list")) {
     server.registerResource(
       "gsc://sites",
       "gsc://sites",
@@ -77,7 +78,7 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
       },
       async (uri) => {
         try {
-          assertToolEnabled(context.config.toolPolicy, "gsc.sites.list");
+          assertToolAvailable(context.config, "gsc.sites.list");
           const service = await createService(context);
           return jsonResource(uri.toString(), { sites: await service.listSites() });
         } catch (error) {
@@ -90,7 +91,7 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
     );
   }
 
-  if (isToolEnabled(context.config.toolPolicy, "gsc.sitemaps.list")) {
+  if (isToolAvailable(context.config, "gsc.sitemaps.list")) {
     server.registerResource(
       "gsc://site/{site}/sitemaps",
       new ResourceTemplate("gsc://site/{site}/sitemaps", {
@@ -106,7 +107,7 @@ export function registerResources(server: McpServer, context: RuntimeContext): v
       },
       async (uri, variables) => {
         try {
-          assertToolEnabled(context.config.toolPolicy, "gsc.sitemaps.list");
+          assertToolAvailable(context.config, "gsc.sitemaps.list");
           const service = await createService(context);
           return jsonResource(uri.toString(), await service.listSitemaps(String(variables.site)));
         } catch (error) {

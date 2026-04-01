@@ -19,6 +19,10 @@ class MockGscClient implements GscClient {
     return { siteUrl, permissionLevel: "siteOwner" };
   }
 
+  async addSite(_siteUrl: string): Promise<void> {}
+
+  async deleteSite(_siteUrl: string): Promise<void> {}
+
   async querySearchAnalytics(_siteUrl: string, request: {
     startDate: string;
     endDate: string;
@@ -74,6 +78,29 @@ class MockGscClient implements GscClient {
   async getSitemap(_siteUrl: string, feedpath: string) {
     return { path: feedpath };
   }
+
+  async submitSitemap(_siteUrl: string, _feedpath: string): Promise<void> {}
+
+  async deleteSitemap(_siteUrl: string, _feedpath: string): Promise<void> {}
+}
+
+function createWriteEnabledConfig(allowedTools: Array<"gsc.sites.add" | "gsc.sites.delete" | "gsc.sitemaps.submit" | "gsc.sitemaps.delete">) {
+  const config = structuredClone(testConfig);
+  for (const toolName of allowedTools) {
+    if (!config.toolPolicy.enabledTools.includes(toolName)) {
+      config.toolPolicy.enabledTools.push(toolName);
+    }
+  }
+  config.writePolicy = {
+    enabled: true,
+    allowedTools,
+    requireConfirmationForDestructive: true,
+    siteAddAllowlist: ["sc-domain:example.com", "sc-domain:newsite.example"],
+    siteAddAllowPatterns: ["https://example.com/*"],
+    siteDeleteAllowlist: ["sc-domain:example.com"],
+    siteDeleteAllowPatterns: ["https://example.com/*"],
+  };
+  return config;
 }
 
 describe("gsc service", () => {
@@ -82,12 +109,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new MockGscClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       audit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     const result = await service.queryPerformance({
@@ -121,12 +149,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new MockGscClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       audit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     await expect(service.inspectUrl({ site: "blog", url: "https://example.com/shop/page" })).rejects.toThrow(/outside/i);
@@ -169,22 +198,24 @@ describe("gsc service", () => {
     const serviceA = new GscService(
       testConfig,
       client,
+      "readonly",
       cache,
       "account-a",
       "secret",
       noopLogger,
       noopAudit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
     const serviceB = new GscService(
       testConfig,
       client,
+      "readonly",
       cache,
       "account-b",
       "secret",
       noopLogger,
       noopAudit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     const first = await serviceA.queryPerformance({
@@ -215,12 +246,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new CountingClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       noopAudit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     const first = await service.getSitemap("main", "https://example.com/sitemap.xml");
@@ -235,12 +267,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new MockGscClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       audit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     await service.listSearchAppearance({
@@ -260,6 +293,7 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new MockGscClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
@@ -269,7 +303,7 @@ describe("gsc service", () => {
           throw new Error("disk full");
         },
       },
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     const result = await service.queryPerformance({
@@ -329,12 +363,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new PaginatedShardClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       noopAudit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     const result = await service.queryPerformance({
@@ -378,12 +413,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new OverBudgetShardClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       noopAudit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     await expect(service.queryPerformance({
@@ -420,12 +456,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new SummaryChunkClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       noopAudit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     const result = await service.queryPerformance({
@@ -451,12 +488,13 @@ describe("gsc service", () => {
     const service = new GscService(
       testConfig,
       new InspectionClient(),
+      "readonly",
       new MemoryCacheStore(),
       "account-a",
       "secret",
       noopLogger,
       noopAudit,
-      (selector) => resolveAllowedProperty(testConfig, selector),
+      (selector: string) => resolveAllowedProperty(testConfig, selector),
     );
 
     const first = await service.inspectUrl({ site: "main", url: "https://example.com/page" });
@@ -467,5 +505,130 @@ describe("gsc service", () => {
     expect(second.metadata.cacheHit).toBe(true);
     expect(third.metadata.cacheHit).toBe(false);
     expect(inspectionRequests).toBe(2);
+  });
+
+  it("requires write scope before executing write tools", async () => {
+    const config = createWriteEnabledConfig(["gsc.sitemaps.submit"]);
+    const service = new GscService(
+      config,
+      new MockGscClient(),
+      "readonly",
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector: string) => resolveAllowedProperty(config, selector),
+    );
+
+    await expect(
+      service.submitSitemap({ site: "main", feedpath: "https://example.com/sitemap.xml" }),
+    ).rejects.toThrow(/auth upgrade --scope write/i);
+  });
+
+  it("requires explicit confirmation for destructive writes", async () => {
+    const config = createWriteEnabledConfig(["gsc.sites.delete"]);
+    const service = new GscService(
+      config,
+      new MockGscClient(),
+      "write",
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector: string) => resolveAllowedProperty(config, selector),
+    );
+
+    await expect(service.deleteSite({ site: "main" })).rejects.toThrow(/requires explicit confirmation/i);
+  });
+
+  it("adds a site with normalized identifiers and ownership-verification warning metadata", async () => {
+    class SiteMutationClient extends MockGscClient {
+      addedSites: string[] = [];
+
+      override async addSite(siteUrl: string): Promise<void> {
+        this.addedSites.push(siteUrl);
+      }
+    }
+
+    const config = createWriteEnabledConfig(["gsc.sites.add"]);
+    const client = new SiteMutationClient();
+    const service = new GscService(
+      config,
+      client,
+      "write",
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector: string) => resolveAllowedProperty(config, selector),
+    );
+
+    const result = await service.addSite({ siteUrl: "SC-DOMAIN:Example.com" });
+
+    expect(client.addedSites).toEqual(["sc-domain:example.com"]);
+    expect(result).toMatchObject({
+      canonicalSiteUrl: "sc-domain:example.com",
+      propertyType: "domain",
+      runtimeAlias: "main",
+      metadata: {
+        allowlistedInRuntimeConfig: true,
+        ownershipVerificationMayBeRequired: true,
+      },
+    });
+    expect(result.warnings.join(" ")).toContain("ownership verification");
+  });
+
+  it("submits and deletes sitemaps with normalized feedpaths", async () => {
+    class SitemapMutationClient extends MockGscClient {
+      submitted: Array<{ siteUrl: string; feedpath: string }> = [];
+      deleted: Array<{ siteUrl: string; feedpath: string }> = [];
+
+      override async submitSitemap(siteUrl: string, feedpath: string): Promise<void> {
+        this.submitted.push({ siteUrl, feedpath });
+      }
+
+      override async deleteSitemap(siteUrl: string, feedpath: string): Promise<void> {
+        this.deleted.push({ siteUrl, feedpath });
+      }
+    }
+
+    const config = createWriteEnabledConfig(["gsc.sitemaps.submit", "gsc.sitemaps.delete"]);
+    const client = new SitemapMutationClient();
+    const service = new GscService(
+      config,
+      client,
+      "write",
+      new MemoryCacheStore(),
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector: string) => resolveAllowedProperty(config, selector),
+    );
+
+    const submitResult = await service.submitSitemap({ site: "main", feedpath: " https://example.com/sitemap.xml " });
+    const deleteResult = await service.deleteSitemap({
+      site: "main",
+      feedpath: " https://example.com/sitemap.xml ",
+      confirm: true,
+    });
+
+    expect(client.submitted).toEqual([
+      {
+        siteUrl: "sc-domain:example.com",
+        feedpath: "https://example.com/sitemap.xml",
+      },
+    ]);
+    expect(client.deleted).toEqual([
+      {
+        siteUrl: "sc-domain:example.com",
+        feedpath: "https://example.com/sitemap.xml",
+      },
+    ]);
+    expect(submitResult.normalizedFeedpath).toBe("https://example.com/sitemap.xml");
+    expect(deleteResult.metadata.confirmed).toBe(true);
   });
 });

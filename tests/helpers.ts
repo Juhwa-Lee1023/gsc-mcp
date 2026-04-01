@@ -41,6 +41,15 @@ export const testConfig: AppConfig = {
     ],
     disabledTools: [],
   },
+  writePolicy: {
+    enabled: false,
+    allowedTools: [],
+    requireConfirmationForDestructive: true,
+    siteAddAllowlist: [],
+    siteAddAllowPatterns: [],
+    siteDeleteAllowlist: [],
+    siteDeleteAllowPatterns: [],
+  },
   queryPolicy: {
     defaultDataState: "final",
     summaryMaxDays: 90,

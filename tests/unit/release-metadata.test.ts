@@ -15,6 +15,7 @@ describe("release metadata", () => {
     expect(packageJson.description).toContain("read-only");
     expect(packageJson.description).toContain("CLI/MCP");
     expect(packageJson.description).toContain("inspector");
+    expect(packageJson.description).toContain("official writes");
     expect(packageJson.publishConfig).toEqual({ access: "public" });
     expect(packageJson.repository).toEqual({
       type: "git",
@@ -56,6 +57,9 @@ describe("release metadata", () => {
     expect(readme).toContain("not a broad Search Console management suite");
     expect(readme).toContain("not consumed as a supported importable library API");
     expect(readme).toContain("live API only");
+    expect(readme).toContain("sites.add");
+    expect(readme).toContain("sitemaps.submit");
+    expect(readme).toContain("ownership verification");
     expect(readme).toContain("pnpm-workspace.yaml");
     expect(readme).toContain("pnpm runtime:smoke");
     expect(readme).toContain("pnpm pack --pack-destination .tmp/pkg");
@@ -72,6 +76,8 @@ describe("release metadata", () => {
     expect(releasing).toContain("pnpm publish --tag beta --access public");
     expect(releasing).toContain("0.1.0-beta.1");
     expect(releasing).toContain("not a generic importable library");
+    expect(releasing).toContain("sites.add");
+    expect(releasing).toContain("destructive writes still require server-side confirmation");
     expect(releasing).toContain("package license still grants public use and redistribution rights");
     expect(releasing).toContain("repository, homepage, and issue tracker URLs");
     expect(workspace).toContain("better-sqlite3");
