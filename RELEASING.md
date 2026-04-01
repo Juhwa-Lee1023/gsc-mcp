@@ -64,4 +64,4 @@ Before publishing, confirm the package still presents itself as:
 Also confirm these publication prerequisites:
 
 - the package license still grants public use and redistribution rights
-- the GitHub repository and issue tracker linked from `package.json` are public if this is being published as a public beta
+- the repository, homepage, and issue tracker URLs in `package.json` are public and resolve for end users if this is being published as a public beta

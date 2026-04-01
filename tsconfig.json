@@ -21,6 +21,7 @@
     ]
   },
   "include": [
+    "scripts/**/*.d.mts",
     "src/**/*.ts",
     "tests/**/*.ts",
     "tsup.config.ts",
