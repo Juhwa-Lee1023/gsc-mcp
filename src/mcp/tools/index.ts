@@ -5,15 +5,23 @@ import {
   performanceQueryInputShape,
   parsePerformanceQueryInput,
   parseSearchAppearanceQueryInput,
+  parseSiteAddInput,
+  parseSiteDeleteInput,
   parseSiteSelectorInput,
+  parseSitemapDeleteInput,
   parseSitemapGetInput,
+  parseSitemapSubmitInput,
   parseUrlInspectionInput,
   searchAppearanceQueryInputShape,
+  siteAddInputShape,
+  siteDeleteInputShape,
   siteSelectorInputShape,
+  sitemapDeleteInputShape,
   sitemapGetInputShape,
+  sitemapSubmitInputShape,
   urlInspectionInputShape,
 } from "../../domain/inputs.js";
-import { assertToolEnabled, isToolEnabled } from "../../domain/tool-policy.js";
+import { assertToolAvailable, isToolAvailable } from "../../domain/tool-policy.js";
 import { createAccountCacheScope, createAuthorizedClient } from "../../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../../gsc/client.js";
 import type { RuntimeContext, ToolName } from "../../domain/types.js";
@@ -26,6 +34,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient, context.logger),
+    tokenRecord.scopeMode,
     context.cache,
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
@@ -37,7 +46,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
 
 export function registerTools(server: McpServer, context: RuntimeContext): void {
   const registerIfEnabled = (toolName: ToolName, callback: () => void): void => {
-    if (isToolEnabled(context.config.toolPolicy, toolName)) {
+    if (isToolAvailable(context.config, toolName)) {
       callback();
     }
   };
@@ -52,10 +61,10 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
         idempotentHint: true,
         openWorldHint: false,
       },
-    },
+      },
     async () => {
       try {
-        assertToolEnabled(context.config.toolPolicy, "gsc.sites.list");
+        assertToolAvailable(context.config, "gsc.sites.list");
         const service = await createService(context);
         return okToolResult({ sites: await service.listSites() });
       } catch (error) {
@@ -78,7 +87,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async ({ site }) => {
       try {
-        assertToolEnabled(context.config.toolPolicy, "gsc.sites.get");
+        assertToolAvailable(context.config, "gsc.sites.get");
         const input = parseSiteSelectorInput({ site });
         const service = await createService(context);
         return okToolResult(await service.getSite(input.site) as unknown as Record<string, unknown>);
@@ -102,7 +111,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async (input) => {
       try {
-        assertToolEnabled(context.config.toolPolicy, "gsc.performance.query");
+        assertToolAvailable(context.config, "gsc.performance.query");
         const parsedInput = parsePerformanceQueryInput(input);
         const service = await createService(context);
         return okToolResult(await service.queryPerformance(parsedInput) as unknown as Record<string, unknown>);
@@ -126,7 +135,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async (input) => {
       try {
-        assertToolEnabled(context.config.toolPolicy, "gsc.performance.search_appearance.list");
+        assertToolAvailable(context.config, "gsc.performance.search_appearance.list");
         const parsedInput = parseSearchAppearanceQueryInput(input);
         const service = await createService(context);
         return okToolResult(await service.listSearchAppearance(parsedInput) as unknown as Record<string, unknown>);
@@ -150,7 +159,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async ({ site, url, forceRefresh }) => {
       try {
-        assertToolEnabled(context.config.toolPolicy, "gsc.url.inspect");
+        assertToolAvailable(context.config, "gsc.url.inspect");
         const input = parseUrlInspectionInput({ site, url, forceRefresh });
         const service = await createService(context);
         return okToolResult(await service.inspectUrl(input) as unknown as Record<string, unknown>);
@@ -174,7 +183,7 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async ({ site }) => {
       try {
-        assertToolEnabled(context.config.toolPolicy, "gsc.sitemaps.list");
+        assertToolAvailable(context.config, "gsc.sitemaps.list");
         const input = parseSiteSelectorInput({ site });
         const service = await createService(context);
         return okToolResult(await service.listSitemaps(input.site) as unknown as Record<string, unknown>);
@@ -198,10 +207,106 @@ export function registerTools(server: McpServer, context: RuntimeContext): void 
     },
     async ({ site, feedpath }) => {
       try {
-        assertToolEnabled(context.config.toolPolicy, "gsc.sitemaps.get");
+        assertToolAvailable(context.config, "gsc.sitemaps.get");
         const input = parseSitemapGetInput({ site, feedpath });
         const service = await createService(context);
         return okToolResult(await service.getSitemap(input.site, input.feedpath) as unknown as Record<string, unknown>);
+      } catch (error) {
+        return errorToolResult(error);
+      }
+    },
+  ));
+
+  registerIfEnabled("gsc.sites.add", () => server.registerTool(
+    "gsc.sites.add",
+    {
+      description: "Add a Search Console property to the linked Google account. This does not verify ownership.",
+      inputSchema: siteAddInputShape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ siteUrl }) => {
+      try {
+        assertToolAvailable(context.config, "gsc.sites.add");
+        const input = parseSiteAddInput({ siteUrl });
+        const service = await createService(context);
+        return okToolResult(await service.addSite(input) as unknown as Record<string, unknown>);
+      } catch (error) {
+        return errorToolResult(error);
+      }
+    },
+  ));
+
+  registerIfEnabled("gsc.sites.delete", () => server.registerTool(
+    "gsc.sites.delete",
+    {
+      description: "Delete a Search Console property from the linked Google account. Requires explicit confirmation.",
+      inputSchema: siteDeleteInputShape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ site, confirm }) => {
+      try {
+        assertToolAvailable(context.config, "gsc.sites.delete");
+        const input = parseSiteDeleteInput({ site, confirm });
+        const service = await createService(context);
+        return okToolResult(await service.deleteSite(input) as unknown as Record<string, unknown>);
+      } catch (error) {
+        return errorToolResult(error);
+      }
+    },
+  ));
+
+  registerIfEnabled("gsc.sitemaps.submit", () => server.registerTool(
+    "gsc.sitemaps.submit",
+    {
+      description: "Submit a sitemap for an allowlisted Search Console property.",
+      inputSchema: sitemapSubmitInputShape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ site, feedpath }) => {
+      try {
+        assertToolAvailable(context.config, "gsc.sitemaps.submit");
+        const input = parseSitemapSubmitInput({ site, feedpath });
+        const service = await createService(context);
+        return okToolResult(await service.submitSitemap(input) as unknown as Record<string, unknown>);
+      } catch (error) {
+        return errorToolResult(error);
+      }
+    },
+  ));
+
+  registerIfEnabled("gsc.sitemaps.delete", () => server.registerTool(
+    "gsc.sitemaps.delete",
+    {
+      description: "Delete a sitemap from an allowlisted Search Console property. Requires explicit confirmation.",
+      inputSchema: sitemapDeleteInputShape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ site, feedpath, confirm }) => {
+      try {
+        assertToolAvailable(context.config, "gsc.sitemaps.delete");
+        const input = parseSitemapDeleteInput({ site, feedpath, confirm });
+        const service = await createService(context);
+        return okToolResult(await service.deleteSitemap(input) as unknown as Record<string, unknown>);
       } catch (error) {
         return errorToolResult(error);
       }

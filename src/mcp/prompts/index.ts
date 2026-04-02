@@ -6,7 +6,7 @@ import type { RuntimeContext } from "../../domain/types.js";
 import { promptResult } from "../helpers.js";
 
 export function registerPrompts(server: McpServer, context: RuntimeContext): void {
-  const availablePrompts = new Set(listAvailablePromptNames(context.config.toolPolicy));
+  const availablePrompts = new Set(listAvailablePromptNames(context.config));
 
   if (availablePrompts.has("gsc-summary")) {
     server.registerPrompt(

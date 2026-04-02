@@ -66,10 +66,18 @@ GSC_MCP_DATA_DIR=.tmp/release-smoke node dist/index.js auth status
 Before publishing, confirm the package still presents itself as:
 
 - read-only by default
+- read-only-first even when official write tools are implemented
 - live API only
 - a Search Console inspector/debugger/copilot
 - not a broad management suite
 - not a generic importable library
+
+Also confirm the guarded official write surface still matches reality:
+
+- only `sites.add`, `sites.delete`, `sitemaps.submit`, and `sitemaps.delete` are exposed as writes
+- write tools remain disabled by default in config
+- destructive writes still require server-side confirmation
+- `sites.add` docs and tool results clearly state that ownership verification may still be required outside this package
 
 Also confirm these publication prerequisites:
 

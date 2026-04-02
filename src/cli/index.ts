@@ -9,13 +9,17 @@ import { createAuthContext, createAuthStateContext, createConfigContext, createR
 import {
   parsePerformanceQueryInput,
   parseSearchAppearanceQueryInput,
+  parseSiteAddInput,
+  parseSiteDeleteInput,
   parseSitemapGetInput,
+  parseSitemapDeleteInput,
+  parseSitemapSubmitInput,
   parseSiteSelectorInput,
   parseUrlInspectionInput,
 } from "../domain/inputs.js";
 import { createDomainError, toDomainError } from "../domain/errors.js";
 import type { RuntimeContext } from "../domain/types.js";
-import { assertToolEnabled } from "../domain/tool-policy.js";
+import { assertToolAvailable } from "../domain/tool-policy.js";
 import { createAccountCacheScope, createAuthorizedClient, createOAuthClient, loginWithLoopback } from "../gsc/auth.js";
 import { GoogleSearchConsoleClient } from "../gsc/client.js";
 import { GscService } from "../gsc/service.js";
@@ -35,6 +39,7 @@ async function createService(context: RuntimeContext): Promise<GscService> {
   return new GscService(
     context.config,
     new GoogleSearchConsoleClient(oauthClient, context.logger),
+    tokenRecord.scopeMode,
     context.cache,
     createAccountCacheScope(tokenRecord),
     context.cursorSigningSecret,
@@ -45,13 +50,13 @@ async function createService(context: RuntimeContext): Promise<GscService> {
 }
 
 async function createServiceForTool(context: RuntimeContext, toolName: import("../domain/types.js").ToolName): Promise<GscService> {
-  assertToolEnabled(context.config.toolPolicy, toolName);
+  assertToolAvailable(context.config, toolName);
   return createService(context);
 }
 
 async function assertCliToolEnabled(toolName: import("../domain/types.js").ToolName): Promise<void> {
   const context = await createConfigContext();
-  assertToolEnabled(context.config.toolPolicy, toolName);
+  assertToolAvailable(context.config, toolName);
 }
 
 function parseJsonOption(value: string | undefined, label: string): unknown {
@@ -216,7 +221,7 @@ async function buildDoctorDiagnostics(cwd: string): Promise<Record<string, unkno
 const program = new Command();
 program
   .name("gsc-mcp")
-  .description("A narrow, read-only Search Console inspector MCP server and CLI.")
+  .description("A narrow, read-only-first Search Console inspector with guarded official writes for CLI and MCP.")
   .version("0.1.0-beta.1");
 
 program
@@ -288,6 +293,7 @@ configCmd
         google: context.config.google,
         properties: context.properties,
         toolPolicy: context.config.toolPolicy,
+        writePolicy: context.config.writePolicy,
         queryPolicy: context.config.queryPolicy,
         cache: context.config.cache,
         logging: context.config.logging,
@@ -315,6 +321,31 @@ sites.command("list").action(async () => {
   const service = await createServiceForTool(context, "gsc.sites.list");
   process.stdout.write(`${jsonText({ sites: await service.listSites() })}\n`);
 });
+
+sites
+  .command("add")
+  .description("Add a Search Console property to the linked Google account. This does not verify ownership.")
+  .requiredOption("--site-url <siteUrl>")
+  .action(async (options) => {
+    const input = parseSiteAddInput({ siteUrl: options.siteUrl });
+    await assertCliToolEnabled("gsc.sites.add");
+    const context = await createRuntimeContext();
+    const service = await createServiceForTool(context, "gsc.sites.add");
+    process.stdout.write(`${jsonText(await service.addSite(input))}\n`);
+  });
+
+sites
+  .command("delete")
+  .description("Delete a Search Console property from the linked Google account.")
+  .requiredOption("--site <site>")
+  .option("--confirm", "Confirm this destructive operation")
+  .action(async (options) => {
+    const input = parseSiteDeleteInput({ site: options.site, confirm: Boolean(options.confirm) });
+    await assertCliToolEnabled("gsc.sites.delete");
+    const context = await createRuntimeContext();
+    const service = await createServiceForTool(context, "gsc.sites.delete");
+    process.stdout.write(`${jsonText(await service.deleteSite(input))}\n`);
+  });
 
 const performance = program.command("performance").description("Performance commands.");
 performance
@@ -405,6 +436,37 @@ sitemaps
     const context = await createRuntimeContext();
     const service = await createServiceForTool(context, "gsc.sitemaps.get");
     process.stdout.write(`${jsonText(await service.getSitemap(input.site, input.feedpath))}\n`);
+  });
+
+sitemaps
+  .command("submit")
+  .description("Submit a sitemap for an allowlisted property.")
+  .requiredOption("--site <site>")
+  .requiredOption("--feedpath <feedpath>")
+  .action(async (options) => {
+    const input = parseSitemapSubmitInput({ site: options.site, feedpath: options.feedpath });
+    await assertCliToolEnabled("gsc.sitemaps.submit");
+    const context = await createRuntimeContext();
+    const service = await createServiceForTool(context, "gsc.sitemaps.submit");
+    process.stdout.write(`${jsonText(await service.submitSitemap(input))}\n`);
+  });
+
+sitemaps
+  .command("delete")
+  .description("Delete a sitemap from an allowlisted property.")
+  .requiredOption("--site <site>")
+  .requiredOption("--feedpath <feedpath>")
+  .option("--confirm", "Confirm this destructive operation")
+  .action(async (options) => {
+    const input = parseSitemapDeleteInput({
+      site: options.site,
+      feedpath: options.feedpath,
+      confirm: Boolean(options.confirm),
+    });
+    await assertCliToolEnabled("gsc.sitemaps.delete");
+    const context = await createRuntimeContext();
+    const service = await createServiceForTool(context, "gsc.sitemaps.delete");
+    process.stdout.write(`${jsonText(await service.deleteSitemap(input))}\n`);
   });
 
 const url = program.command("url").description("URL commands.");

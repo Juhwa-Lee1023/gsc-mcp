@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-import { READ_ONLY_TOOLS } from "../domain/types.js";
+import { IMPLEMENTED_TOOLS, WRITE_TOOLS } from "../domain/types.js";
 
-const toolNameSchema = z.enum(READ_ONLY_TOOLS);
+const toolNameSchema = z.enum(IMPLEMENTED_TOOLS);
+const writeToolNameSchema = z.enum(WRITE_TOOLS);
 
 export const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1),
@@ -34,6 +35,25 @@ export const appConfigSchema = z.object({
     enabledTools: z.array(toolNameSchema),
     disabledTools: z.array(toolNameSchema),
   }),
+  writePolicy: z
+    .object({
+      enabled: z.boolean().default(false),
+      allowedTools: z.array(writeToolNameSchema).default([]),
+      requireConfirmationForDestructive: z.boolean().default(true),
+      siteAddAllowlist: z.array(z.string().min(1)).default([]),
+      siteAddAllowPatterns: z.array(z.string().min(1)).default([]),
+      siteDeleteAllowlist: z.array(z.string().min(1)).default([]),
+      siteDeleteAllowPatterns: z.array(z.string().min(1)).default([]),
+    })
+    .default({
+      enabled: false,
+      allowedTools: [],
+      requireConfirmationForDestructive: true,
+      siteAddAllowlist: [],
+      siteAddAllowPatterns: [],
+      siteDeleteAllowlist: [],
+      siteDeleteAllowPatterns: [],
+    }),
   queryPolicy: z.object({
     defaultDataState: z.enum(["final", "all", "hourly_all"]).default("final"),
     summaryMaxDays: z.number().int().positive(),

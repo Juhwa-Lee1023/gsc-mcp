@@ -41,6 +41,15 @@ export const testConfig: AppConfig = {
     ],
     disabledTools: [],
   },
+  writePolicy: {
+    enabled: false,
+    allowedTools: [],
+    requireConfirmationForDestructive: true,
+    siteAddAllowlist: [],
+    siteAddAllowPatterns: [],
+    siteDeleteAllowlist: [],
+    siteDeleteAllowPatterns: [],
+  },
   queryPolicy: {
     defaultDataState: "final",
     summaryMaxDays: 90,
@@ -86,6 +95,15 @@ export class MemoryCacheStore implements CacheStore {
 
   async delete(namespace: string, key: string): Promise<void> {
     this.values.delete(`${namespace}:${key}`);
+  }
+
+  async deletePrefix(namespace: string, keyPrefix: string): Promise<void> {
+    const fullPrefix = `${namespace}:${keyPrefix}`;
+    for (const key of this.values.keys()) {
+      if (key.startsWith(fullPrefix)) {
+        this.values.delete(key);
+      }
+    }
   }
 
   async clearExpired(): Promise<void> {

@@ -3,7 +3,7 @@ import type { AppConfig, PropertyConfig, ResolvedProperty } from "../domain/type
 
 export function normalizeSiteUrl(siteUrl: string): string {
   const trimmed = siteUrl.trim();
-  if (trimmed.startsWith("sc-domain:")) {
+  if (/^sc-domain:/i.test(trimmed)) {
     const host = trimmed.slice("sc-domain:".length).trim().replace(/\/+$/, "").toLowerCase();
     if (!host) {
       throw createDomainError("INVALID_SITE_URL", "Invalid domain property.", false, { siteUrl });
@@ -51,19 +51,50 @@ export function resolvePropertyConfig(property: PropertyConfig): ResolvedPropert
 }
 
 export function resolveAllowedProperty(config: AppConfig, selector: string): ResolvedProperty {
-  const byAlias = config.properties.find((property) => property.alias === selector);
-  if (byAlias) {
-    return resolvePropertyConfig(byAlias);
-  }
-  const canonical = normalizeSiteUrl(selector);
-  const bySite = config.properties.find((property) => normalizeSiteUrl(property.siteUrl) === canonical);
+  const bySite = findConfiguredProperty(config, selector);
   if (!bySite) {
+    const canonical = normalizeSiteUrl(selector);
     throw createDomainError("PROPERTY_NOT_ALLOWED", "The requested property is not allowlisted.", false, {
       selector,
       canonical,
     });
   }
-  return resolvePropertyConfig(bySite);
+  return bySite;
+}
+
+export function findConfiguredProperty(config: AppConfig, selector: string): ResolvedProperty | null {
+  const canonical = tryNormalizeSiteUrl(selector);
+  if (canonical) {
+    const bySite = config.properties.find((property) => normalizeSiteUrl(property.siteUrl) === canonical);
+    if (bySite) {
+      return resolvePropertyConfig(bySite);
+    }
+  }
+  const byAlias = config.properties.find((property) => property.alias === selector);
+  if (byAlias) {
+    return resolvePropertyConfig(byAlias);
+  }
+  return null;
+}
+
+function tryNormalizeSiteUrl(siteUrl: string): string | null {
+  try {
+    return normalizeSiteUrl(siteUrl);
+  } catch {
+    return null;
+  }
+}
+
+export function findConfiguredPropertyByCanonicalSiteUrl(config: AppConfig, canonicalSiteUrl: string): ResolvedProperty | null {
+  const bySite = config.properties.find((property) => normalizeSiteUrl(property.siteUrl) === canonicalSiteUrl);
+  return bySite ? resolvePropertyConfig(bySite) : null;
+}
+
+export function matchesSiteUrlPolicy(siteUrl: string, allowlist: readonly string[], patterns: readonly string[]): boolean {
+  if (allowlist.includes(siteUrl)) {
+    return true;
+  }
+  return patterns.some((pattern) => wildcardToRegExp(pattern).test(siteUrl));
 }
 
 export function assertUrlWithinProperty(inspectionUrl: string, property: ResolvedProperty): URL {
@@ -111,4 +142,9 @@ function matchesPrefixPath(candidatePath: string, prefixPath: string): boolean {
     : prefixPath;
 
   return candidatePath === prefixWithoutTrailingSlash || candidatePath.startsWith(prefixPath);
+}
+
+function wildcardToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[|\\{}()[\]^$+?.]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
 }

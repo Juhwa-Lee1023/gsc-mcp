@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mapGoogleError } from "../../src/gsc/client.js";
+import { GoogleSearchConsoleClient, mapGoogleError } from "../../src/gsc/client.js";
 
 describe("google client error mapping", () => {
   it("maps permission errors and preserves original details", () => {
@@ -99,5 +99,70 @@ describe("google client error mapping", () => {
         transportCode: "ETIMEDOUT",
       },
     });
+  });
+
+  it("uses bodyless PUT/DELETE requests for official Search Console writes", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const client = new GoogleSearchConsoleClient({
+      request: async (options: Record<string, unknown>) => {
+        calls.push(options);
+        return { data: undefined };
+      },
+    } as never);
+
+    await client.addSite("sc-domain:example.com");
+    await client.deleteSite("sc-domain:example.com");
+    await client.submitSitemap("https://example.com/", "https://example.com/sitemap.xml");
+    await client.deleteSitemap("https://example.com/", "https://example.com/sitemap.xml");
+
+    expect(calls).toHaveLength(4);
+    expect(calls).toEqual([
+      expect.objectContaining({
+        method: "PUT",
+        url: expect.stringContaining("/sites/sc-domain%3Aexample.com"),
+        data: undefined,
+      }),
+      expect.objectContaining({
+        method: "DELETE",
+        url: expect.stringContaining("/sites/sc-domain%3Aexample.com"),
+        data: undefined,
+      }),
+      expect.objectContaining({
+        method: "PUT",
+        url: expect.stringContaining("/sites/https%3A%2F%2Fexample.com%2F/sitemaps/https%3A%2F%2Fexample.com%2Fsitemap.xml"),
+        data: undefined,
+      }),
+      expect.objectContaining({
+        method: "DELETE",
+        url: expect.stringContaining("/sites/https%3A%2F%2Fexample.com%2F/sitemaps/https%3A%2F%2Fexample.com%2Fsitemap.xml"),
+        data: undefined,
+      }),
+    ]);
+  });
+
+  it("does not retry write requests when a retryable error occurs", async () => {
+    let attempts = 0;
+    const client = new GoogleSearchConsoleClient({
+      request: async () => {
+        attempts += 1;
+        throw {
+          message: "temporary outage",
+          response: {
+            status: 503,
+            data: {
+              error: {
+                message: "temporary outage",
+              },
+            },
+          },
+        };
+      },
+    } as never);
+
+    await expect(client.deleteSite("sc-domain:example.com")).rejects.toMatchObject({
+      code: "INTERNAL_ERROR",
+      retryable: true,
+    });
+    expect(attempts).toBe(1);
   });
 });

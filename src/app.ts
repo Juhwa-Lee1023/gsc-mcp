@@ -18,6 +18,8 @@ class NoopCacheStore implements CacheStore {
 
   async delete(): Promise<void> {}
 
+  async deletePrefix(): Promise<void> {}
+
   async clearExpired(): Promise<void> {}
 
   async close(): Promise<void> {}

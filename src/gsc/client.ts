@@ -34,6 +34,24 @@ export class GoogleSearchConsoleClient implements GscClient {
     });
   }
 
+  async addSite(siteUrl: string): Promise<void> {
+    await this.request<void>({
+      label: "sites.add",
+      url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}`,
+      method: "PUT",
+      allowRetries: false,
+    });
+  }
+
+  async deleteSite(siteUrl: string): Promise<void> {
+    await this.request<void>({
+      label: "sites.delete",
+      url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}`,
+      method: "DELETE",
+      allowRetries: false,
+    });
+  }
+
   async querySearchAnalytics(
     siteUrl: string,
     request: {
@@ -105,8 +123,33 @@ export class GoogleSearchConsoleClient implements GscClient {
     });
   }
 
-  private async request<T>(options: { label: string; url: string; method: "GET" | "POST"; data?: unknown }): Promise<T> {
-    for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
+  async submitSitemap(siteUrl: string, feedpath: string): Promise<void> {
+    await this.request<void>({
+      label: "sitemaps.submit",
+      url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}/sitemaps/${encodeURIComponent(feedpath)}`,
+      method: "PUT",
+      allowRetries: false,
+    });
+  }
+
+  async deleteSitemap(siteUrl: string, feedpath: string): Promise<void> {
+    await this.request<void>({
+      label: "sitemaps.delete",
+      url: `${WEBMASTERS_BASE_URL}/sites/${encodeURIComponent(siteUrl)}/sitemaps/${encodeURIComponent(feedpath)}`,
+      method: "DELETE",
+      allowRetries: false,
+    });
+  }
+
+  private async request<T>(options: {
+    label: string;
+    url: string;
+    method: "GET" | "POST" | "PUT" | "DELETE";
+    data?: unknown;
+    allowRetries?: boolean;
+  }): Promise<T> {
+    const maxRetries = (options.allowRetries ?? true) ? MAX_RETRIES : 0;
+    for (let attempt = 1; attempt <= maxRetries + 1; attempt += 1) {
       try {
         const response = await this.oauthClient.request<T>({
           url: options.url,
@@ -117,7 +160,7 @@ export class GoogleSearchConsoleClient implements GscClient {
         return response.data;
       } catch (error) {
         const domainError = mapGoogleError(error);
-        if (!domainError.retryable || attempt > MAX_RETRIES) {
+        if (!domainError.retryable || attempt > maxRetries) {
           throw domainError;
         }
 
