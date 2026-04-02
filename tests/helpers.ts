@@ -97,6 +97,15 @@ export class MemoryCacheStore implements CacheStore {
     this.values.delete(`${namespace}:${key}`);
   }
 
+  async deletePrefix(namespace: string, keyPrefix: string): Promise<void> {
+    const fullPrefix = `${namespace}:${keyPrefix}`;
+    for (const key of this.values.keys()) {
+      if (key.startsWith(fullPrefix)) {
+        this.values.delete(key);
+      }
+    }
+  }
+
   async clearExpired(): Promise<void> {
     for (const [key, entry] of this.values.entries()) {
       if (entry.expiresAt <= Date.now()) {

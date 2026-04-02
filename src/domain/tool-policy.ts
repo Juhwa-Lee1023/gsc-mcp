@@ -1,5 +1,6 @@
 import { createDomainError } from "./errors.js";
 import {
+  DESTRUCTIVE_WRITE_TOOLS,
   IMPLEMENTED_TOOLS,
   WRITE_TOOLS,
   type AppConfig,
@@ -11,6 +12,7 @@ import {
 
 const IMPLEMENTED_TOOL_SET = new Set<ToolName>(IMPLEMENTED_TOOLS);
 const WRITE_TOOL_SET = new Set<WriteToolName>(WRITE_TOOLS);
+const DESTRUCTIVE_WRITE_TOOL_SET = new Set<WriteToolName>(DESTRUCTIVE_WRITE_TOOLS);
 
 type PolicyContext = Pick<AppConfig, "toolPolicy" | "writePolicy">;
 
@@ -121,7 +123,7 @@ export function validateWritePolicy(context: PolicyContext): void {
     }
   }
 
-  const destructiveEnabled = writePolicy.allowedTools.some((toolName) => toolName === "gsc.sites.delete" || toolName === "gsc.sitemaps.delete");
+  const destructiveEnabled = writePolicy.allowedTools.some((toolName) => DESTRUCTIVE_WRITE_TOOL_SET.has(toolName));
   if (destructiveEnabled && !writePolicy.requireConfirmationForDestructive) {
     throw createDomainError(
       "CONFIG_ERROR",

@@ -42,6 +42,7 @@ import { safeWriteAuditEvent } from "../security/audit-utils.js";
 import { stableHash } from "../utils/crypto.js";
 import {
   assertUrlWithinProperty,
+  findConfiguredPropertyByCanonicalSiteUrl,
   findConfiguredProperty,
   matchesSiteUrlPolicy,
   normalizeSiteUrl,
@@ -177,7 +178,7 @@ export class GscService {
         await this.client.addSite(canonicalSiteUrl);
         await this.invalidateScopedCache("sites", "list");
 
-        const configuredProperty = findConfiguredProperty(this.config, canonicalSiteUrl);
+        const configuredProperty = findConfiguredPropertyByCanonicalSiteUrl(this.config, canonicalSiteUrl);
         const warnings = [
           canonicalSiteUrl.startsWith("sc-domain:")
             ? "Property was added to Search Console, but domain-property ownership verification may still require DNS verification outside this package."
@@ -222,7 +223,7 @@ export class GscService {
         this.assertSiteDeleteAllowed(canonicalSiteUrl);
 
         await this.client.deleteSite(canonicalSiteUrl);
-        await this.invalidateScopedCache("sites", "list");
+        await this.invalidateDeletedSiteCaches(canonicalSiteUrl);
 
         const warnings = configuredProperty
           ? ["The runtime config still includes this property alias. Remove or update the config if you no longer want it available in gsc-mcp."]
@@ -660,10 +661,22 @@ export class GscService {
     await this.cache.delete(namespace, `${this.cacheScope}:${key}`);
   }
 
+  private async invalidateScopedCachePrefix(namespace: string, keyPrefix: string): Promise<void> {
+    await this.cache.deletePrefix(namespace, `${this.cacheScope}:${keyPrefix}`);
+  }
+
   private async invalidateSitemapCaches(canonicalSiteUrl: string, normalizedFeedpath: string): Promise<void> {
     await Promise.all([
       this.invalidateScopedCache("sitemaps", canonicalSiteUrl),
       this.invalidateScopedCache("sitemap", `${canonicalSiteUrl}:${normalizedFeedpath}`),
+    ]);
+  }
+
+  private async invalidateDeletedSiteCaches(canonicalSiteUrl: string): Promise<void> {
+    await Promise.all([
+      this.invalidateScopedCache("sites", "list"),
+      this.invalidateScopedCache("sitemaps", canonicalSiteUrl),
+      this.invalidateScopedCachePrefix("sitemap", `${canonicalSiteUrl}:`),
     ]);
   }
 

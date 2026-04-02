@@ -63,12 +63,30 @@ export function resolveAllowedProperty(config: AppConfig, selector: string): Res
 }
 
 export function findConfiguredProperty(config: AppConfig, selector: string): ResolvedProperty | null {
+  const canonical = tryNormalizeSiteUrl(selector);
+  if (canonical) {
+    const bySite = config.properties.find((property) => normalizeSiteUrl(property.siteUrl) === canonical);
+    if (bySite) {
+      return resolvePropertyConfig(bySite);
+    }
+  }
   const byAlias = config.properties.find((property) => property.alias === selector);
   if (byAlias) {
     return resolvePropertyConfig(byAlias);
   }
-  const canonical = normalizeSiteUrl(selector);
-  const bySite = config.properties.find((property) => normalizeSiteUrl(property.siteUrl) === canonical);
+  return null;
+}
+
+function tryNormalizeSiteUrl(siteUrl: string): string | null {
+  try {
+    return normalizeSiteUrl(siteUrl);
+  } catch {
+    return null;
+  }
+}
+
+export function findConfiguredPropertyByCanonicalSiteUrl(config: AppConfig, canonicalSiteUrl: string): ResolvedProperty | null {
+  const bySite = config.properties.find((property) => normalizeSiteUrl(property.siteUrl) === canonicalSiteUrl);
   return bySite ? resolvePropertyConfig(bySite) : null;
 }
 

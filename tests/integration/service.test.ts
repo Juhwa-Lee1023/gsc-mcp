@@ -71,7 +71,7 @@ class MockGscClient implements GscClient {
     };
   }
 
-  async listSitemaps() {
+  async listSitemaps(_siteUrl: string) {
     return [{ path: "https://example.com/sitemap.xml" }];
   }
 
@@ -630,5 +630,55 @@ describe("gsc service", () => {
     ]);
     expect(submitResult.normalizedFeedpath).toBe("https://example.com/sitemap.xml");
     expect(deleteResult.metadata.confirmed).toBe(true);
+  });
+
+  it("invalidates sitemap caches when deleting a site", async () => {
+    class SiteDeleteClient extends MockGscClient {
+      listed = 0;
+      fetched = 0;
+      deletedSites: string[] = [];
+
+      override async listSitemaps(siteUrl: string) {
+        this.listed += 1;
+        return super.listSitemaps(siteUrl);
+      }
+
+      override async getSitemap(siteUrl: string, feedpath: string) {
+        this.fetched += 1;
+        return super.getSitemap(siteUrl, feedpath);
+      }
+
+      override async deleteSite(siteUrl: string): Promise<void> {
+        this.deletedSites.push(siteUrl);
+      }
+    }
+
+    const config = createWriteEnabledConfig(["gsc.sites.delete"]);
+    const client = new SiteDeleteClient();
+    const cache = new MemoryCacheStore();
+    const service = new GscService(
+      config,
+      client,
+      "write",
+      cache,
+      "account-a",
+      "secret",
+      noopLogger,
+      noopAudit,
+      (selector: string) => resolveAllowedProperty(config, selector),
+    );
+
+    await service.listSitemaps("main");
+    await service.getSitemap("main", "https://example.com/sitemap.xml");
+    expect(client.listed).toBe(1);
+    expect(client.fetched).toBe(1);
+
+    await service.deleteSite({ site: "main", confirm: true });
+    await service.listSitemaps("main");
+    await service.getSitemap("main", "https://example.com/sitemap.xml");
+
+    expect(client.deletedSites).toEqual(["sc-domain:example.com"]);
+    expect(client.listed).toBe(2);
+    expect(client.fetched).toBe(2);
   });
 });

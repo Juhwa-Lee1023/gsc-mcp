@@ -55,6 +55,10 @@ export class SqliteCacheStore implements CacheStore {
     this.db.prepare("DELETE FROM cache_entries WHERE namespace = ? AND key = ?").run(namespace, key);
   }
 
+  async deletePrefix(namespace: string, keyPrefix: string): Promise<void> {
+    this.db.prepare("DELETE FROM cache_entries WHERE namespace = ? AND key LIKE ?").run(namespace, `${keyPrefix}%`);
+  }
+
   async clearExpired(): Promise<void> {
     this.db.prepare("DELETE FROM cache_entries WHERE expires_at <= ?").run(Date.now());
   }
