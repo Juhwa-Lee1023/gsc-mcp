@@ -13,6 +13,8 @@ export async function safeWriteAuditEvent(
     logger.error("Failed to write audit event", {
       auditAction: event.action,
       auditOutcome: event.outcome,
+      auditToolName: event.toolName ?? null,
+      auditSiteAlias: event.siteAlias ?? null,
       errorCode: domainError.code,
       retryable: domainError.retryable,
     });
